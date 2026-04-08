@@ -4,14 +4,14 @@
 
 | remote | URL | 공개 | 용도 |
 |--------|-----|------|------|
-| `origin` | https://github.com/97Wobbler/slack-fetch-mcp-dev.git | private | 개발용. 모든 브랜치 push 가능 |
-| `public` | https://github.com/97Wobbler/slack-fetch-mcp.git | public | 배포용. **main 브랜치만** push |
+| `origin` | https://github.com/97Wobbler/slackbox-dev.git | private | 개발용. 모든 브랜치 push 가능 |
+| `public` | https://github.com/97Wobbler/slackbox.git | public | 배포용. **main 브랜치만** push |
 
 ## 초기 세팅 (새 PC에서)
 
 ```bash
-git clone https://github.com/97Wobbler/slack-fetch-mcp-dev.git slack-fetch-mcp
-cd slack-fetch-mcp
+git clone https://github.com/97Wobbler/slackbox-dev.git slackbox
+cd slackbox
 bash scripts/setup-dev.sh
 ```
 

@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "slack-fetch-mcp"
+name = "slackbox"
 version = "0.1.0"
 description = "Slack bulk fetching MCP server for Claude Code — collect channel/user messages with checkpoint/resume and rate-limit handling"
 license = {text = "MIT"}
@@ -26,9 +26,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/97Wobbler/slack-fetch-mcp"
-Repository = "https://github.com/97Wobbler/slack-fetch-mcp"
-Issues = "https://github.com/97Wobbler/slack-fetch-mcp/issues"
+Homepage = "https://github.com/97Wobbler/slackbox"
+Repository = "https://github.com/97Wobbler/slackbox"
+Issues = "https://github.com/97Wobbler/slackbox/issues"
 
 [project.scripts]
 slack-fetch = "slack_fetch.cli:main"

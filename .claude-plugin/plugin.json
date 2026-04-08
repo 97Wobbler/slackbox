@@ -1,11 +1,11 @@
 {
-  "name": "slack-fetch-mcp",
+  "name": "slackbox",
   "version": "0.1.0",
   "description": "Slack 워크스페이스에서 채널/사용자별 대화를 대량으로 가져와 Markdown으로 정제합니다. 공식 Slack MCP보다 벌크 수집에 최적화되어 있어, 위클리 리포트·조직 분석·대화 아카이브 등에 적합합니다.",
   "author": {
     "name": "97Wobbler"
   },
-  "repository": "https://github.com/97Wobbler/slack-fetch-mcp",
+  "repository": "https://github.com/97Wobbler/slackbox",
   "license": "MIT",
   "keywords": ["slack", "mcp", "bulk-fetch", "analysis", "archive"],
   "mcpServers": {

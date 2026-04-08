@@ -39,7 +39,7 @@ from slack_fetch.data_loader import _load_channels, _load_all_messages
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("slack-fetch-mcp", instructions="Slack 워크스페이스 벌크 크롤링 도구")
+mcp = FastMCP("slackbox", instructions="Slack 워크스페이스 벌크 크롤링 도구")
 
 # ── 설정/클라이언트 싱글턴 ──────────────────────────────────────
 

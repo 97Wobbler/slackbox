@@ -16,7 +16,7 @@ import click
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="slack-fetch-mcp")
+@click.version_option(version="0.1.0", prog_name="slackbox")
 def cli():
     """Slack Fetch MCP — 벌크 수집 + MCP 서버"""
     pass

@@ -11,7 +11,7 @@ cd "$REPO_ROOT"
 if git remote get-url public &>/dev/null; then
     echo "public remote 이미 설정됨: $(git remote get-url public)"
 else
-    git remote add public https://github.com/97Wobbler/slack-fetch-mcp.git
+    git remote add public https://github.com/97Wobbler/slackbox.git
     echo "public remote 추가 완료"
 fi
 
