@@ -26,17 +26,5 @@
       "type": "string",
       "sensitive": true
     }
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cd \"${CLAUDE_PLUGIN_DATA}\" && [ -f .installed ] || (pip3 install \"${CLAUDE_PLUGIN_ROOT}\" -t ./lib && touch .installed)"
-          }
-        ]
-      }
-    ]
   }
 }

@@ -723,8 +723,22 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
 
 # ── 엔트리포인트 ─────────────────────────────────────────────────
 
+def _ensure_dependencies() -> None:
+    """필수 의존성이 없으면 자동 설치."""
+    try:
+        import slack_sdk  # noqa: F401
+    except ImportError:
+        import subprocess
+        import sys
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "slack-sdk", "python-dotenv", "certifi", "mcp"],
+            stdout=subprocess.DEVNULL,
+        )
+
+
 def main():
     """stdio transport로 MCP 서버 실행."""
+    _ensure_dependencies()
     mcp.run(transport="stdio")
 
 
