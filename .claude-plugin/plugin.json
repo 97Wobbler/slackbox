@@ -9,12 +9,13 @@
   "license": "MIT",
   "keywords": ["slack", "mcp", "bulk-fetch", "analysis", "archive"],
   "mcpServers": {
-    "slack-fetch": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/bin/slack-fetch",
-      "args": ["serve"],
+    "slackbox": {
+      "command": "python3",
+      "args": ["-m", "slack_fetch.mcp_server"],
       "env": {
         "SLACK_USER_TOKEN": "${user_config.slack_token}",
-        "SLACK_FETCH_DATA_DIR": "${CLAUDE_PLUGIN_DATA}/data"
+        "SLACK_FETCH_DATA_DIR": "${CLAUDE_PLUGIN_DATA}/data",
+        "PYTHONPATH": "${CLAUDE_PLUGIN_DATA}/lib"
       }
     }
   },
@@ -25,5 +26,17 @@
       "type": "string",
       "sensitive": true
     }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PLUGIN_DATA}\" && [ -f .installed ] || (pip3 install \"${CLAUDE_PLUGIN_ROOT}\" -t ./lib && touch .installed)"
+          }
+        ]
+      }
+    ]
   }
 }
