@@ -153,9 +153,12 @@ def collect_threads(client: WebClient, cfg: CrawlerConfig, *, user_id: str | Non
             time.sleep(cfg.base_delay)
 
         if replies:
-            with open(out_path, "w", encoding="utf-8") as f:
+            # D4: 임시 파일에 먼저 쓰고 rename으로 원자적 저장 (중단 시 불완전 파일 방지)
+            tmp_path = threads_dir / f"{key}.jsonl.tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 for r in replies:
                     f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            tmp_path.rename(out_path)
             collected += 1
 
         done.add(key)

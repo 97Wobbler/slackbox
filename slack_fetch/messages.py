@@ -174,6 +174,14 @@ def collect_via_history(client: WebClient, cfg: CrawlerConfig, channels: list[di
         start_idx = ckpt.get("last_channel_idx", 0) if ckpt.get("phase") == "history" else 0
         user_total = ckpt.get("collected_messages", 0)
 
+        # D2: 기존 파일의 ts를 로드하여 중복 방지
+        seen_ts: set[str] = set()
+        if messages_path.exists():
+            with open(messages_path, encoding="utf-8") as ef:
+                for line in ef:
+                    rec = json.loads(line)
+                    seen_ts.add(f"{rec['ts']}_{rec.get('channel_id', '')}")
+
     for i, ch in enumerate(channels):
         # ── user_id 지정 모드: 채널 인덱스 skip ──
         if not collect_all:
@@ -193,6 +201,14 @@ def collect_via_history(client: WebClient, cfg: CrawlerConfig, channels: list[di
                 continue
 
             ch_total = ch_ckpt.get("collected_messages", 0)
+
+            # D2: 기존 파일의 ts를 로드하여 중복 방지
+            seen_ts = set()
+            if messages_path.exists():
+                with open(messages_path, encoding="utf-8") as ef:
+                    for line in ef:
+                        rec = json.loads(line)
+                        seen_ts.add(f"{rec['ts']}_{rec.get('channel_id', '')}")
 
         label = f"channel:{ch['name']}" if collect_all else uid
         cursor = None
@@ -240,8 +256,15 @@ def collect_via_history(client: WebClient, cfg: CrawlerConfig, channels: list[di
                     if msg.get("subtype") in ("channel_join", "channel_leave", "bot_message"):
                         continue
 
+                    # D2: 중복 메시지 건너뛰기
+                    ts = msg.get("ts", "")
+                    dedup_key = f"{ts}_{ch['id']}"
+                    if dedup_key in seen_ts:
+                        continue
+                    seen_ts.add(dedup_key)
+
                     record = {
-                        "ts": msg.get("ts", ""),
+                        "ts": ts,
                         "user": msg.get("user", ""),
                         "channel_id": ch["id"],
                         "channel_name": ch["name"],
