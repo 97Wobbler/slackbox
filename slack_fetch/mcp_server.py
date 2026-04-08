@@ -363,7 +363,16 @@ def search_messages(query: str, days: int = 30) -> str:
                 if e.response.status_code == 429:
                     handle_rate_limit(e)
                     continue
-                raise
+                error_code = e.response.get("error", "unknown_error")
+                if error_code in ("token_revoked", "invalid_auth", "not_authed", "account_inactive"):
+                    return (
+                        f"Slack 인증 오류 ({error_code}): 토큰이 만료되었거나 무효합니다."
+                    )
+                if error_code == "missing_scope":
+                    return (
+                        f"Slack 권한 부족 ({error_code}): 필요한 scope를 확인하세요."
+                    )
+                return f"Slack API 오류 ({error_code}): {e}"
 
             messages = resp.get("messages", {}).get("matches", [])
             if not messages:
@@ -410,7 +419,7 @@ def search_messages(query: str, days: int = 30) -> str:
 def crawl_threads(
     channel: str = "",
     thread_ts_list: list[str] | None = None,
-    user_id: str = "",
+    user_id: str | None = None,
 ) -> str:
     """지정된 스레드들의 전체 대화를 수집합니다.
 
@@ -490,8 +499,13 @@ def crawl_threads(
                         }, ensure_ascii=False) + "\n")
                 collected += 1
 
-        except Exception as e:
-            errors_list.append(f"{thread_ts}: {e}")
+        except SlackApiError as e:
+            error_code = e.response.get("error", "unknown_error")
+            if error_code in ("token_revoked", "invalid_auth", "not_authed", "account_inactive"):
+                return f"Slack 인증 오류 ({error_code}): 토큰이 만료되었거나 무효합니다."
+            if error_code == "missing_scope":
+                return f"Slack 권한 부족 ({error_code}): 필요한 scope를 확인하세요."
+            errors_list.append(f"{thread_ts}: {error_code} - {e}")
 
     result = f"#{channel_name} 스레드 {collected}/{len(thread_ts_list)}개 수집 완료."
     if errors_list:
@@ -515,7 +529,15 @@ def crawl_mentions(user_id: str, days: int = 30) -> str:
 
     since = _since_str(days) if days > 0 else None
 
-    total = collect_mentions(client, cfg, since=since, user_id=user_id)
+    try:
+        total = collect_mentions(client, cfg, since=since, user_id=user_id)
+    except SlackApiError as e:
+        error_code = e.response.get("error", "unknown_error")
+        if error_code in ("token_revoked", "invalid_auth", "not_authed", "account_inactive"):
+            return f"Slack 인증 오류 ({error_code}): 토큰이 만료되었거나 무효합니다."
+        if error_code == "missing_scope":
+            return f"Slack 권한 부족 ({error_code}): 필요한 scope를 확인하세요."
+        return f"Slack API 오류 ({error_code}): {e}"
 
     period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
     return (

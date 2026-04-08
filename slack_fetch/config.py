@@ -86,6 +86,5 @@ class CrawlerConfig:
         ]
         for uid in self.target_user_ids:
             dirs.append(self.user_raw_dir(uid))
-            dirs.append(self.user_threads_dir(uid))
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
