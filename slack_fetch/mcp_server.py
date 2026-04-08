@@ -33,6 +33,7 @@ from slack_fetch.text_cleaner import (
     load_user_map_from_threads,
     load_channel_map,
 )
+from slack_fetch.utils import safe_json_loads
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -346,7 +347,7 @@ def search_messages(query: str, days: int = 30, until: str = "") -> str:
         with open(out_path, encoding="utf-8") as ef:
             for line in ef:
                 if line.strip():
-                    rec = _safe_json_loads(line, out_path)
+                    rec = safe_json_loads(line, out_path)
                     if rec is not None:
                         seen_ts.add(f"{rec['ts']}_{rec.get('channel_id', '')}")
 
@@ -551,14 +552,6 @@ def crawl_mentions(user_id: str, days: int = 30, until: str = "") -> str:
     )
 
 
-def _safe_json_loads(line: str, filepath: Path | str = "") -> dict | None:
-    """JSON 라인을 안전하게 파싱. 불완전한 라인은 skip하고 None 반환."""
-    try:
-        return json.loads(line)
-    except json.JSONDecodeError:
-        logger.warning("불완전한 JSON 라인 스킵 (파일: %s): %s", filepath, line[:120])
-        return None
-
 
 def _load_all_messages(cfg: CrawlerConfig) -> tuple[list[dict], dict[str, int]]:
     """3가지 소스에서 메시지를 로드하고 ts+channel_id 기반 dedup.
@@ -592,7 +585,7 @@ def _load_all_messages(cfg: CrawlerConfig) -> tuple[list[dict], dict[str, int]]:
             with open(mp, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
-                        msg = _safe_json_loads(line, mp)
+                        msg = safe_json_loads(line, mp)
                         if msg is not None:
                             _add(msg, "user")
 
@@ -603,7 +596,7 @@ def _load_all_messages(cfg: CrawlerConfig) -> tuple[list[dict], dict[str, int]]:
             with open(ch_msg_path, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
-                        msg = _safe_json_loads(line, ch_msg_path)
+                        msg = safe_json_loads(line, ch_msg_path)
                         if msg is not None:
                             _add(msg, "channel")
 
@@ -614,7 +607,7 @@ def _load_all_messages(cfg: CrawlerConfig) -> tuple[list[dict], dict[str, int]]:
             with open(search_path, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
-                        msg = _safe_json_loads(line, search_path)
+                        msg = safe_json_loads(line, search_path)
                         if msg is not None:
                             _add(msg, "search")
 
@@ -765,7 +758,7 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
             with open(mp, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
-                        msg = _safe_json_loads(line, mp)
+                        msg = safe_json_loads(line, mp)
                         if msg is None:
                             continue
                         dk = f"{msg.get('ts', '')}_{msg.get('channel_id', '')}"
