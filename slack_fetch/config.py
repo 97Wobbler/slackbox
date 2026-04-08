@@ -45,8 +45,18 @@ class CrawlerConfig:
     def user_messages_path(self, user_id: str) -> Path:
         return self.raw_dir / user_id / "messages.jsonl"
 
+    @property
+    def shared_threads_dir(self) -> Path:
+        return self.raw_dir / "threads"
+
     def channels_path(self) -> Path:
         return self.raw_dir / "channels.json"
+
+    def channel_dir(self, channel_id: str) -> Path:
+        return self.raw_dir / "channels" / channel_id
+
+    def channel_messages_path(self, channel_id: str) -> Path:
+        return self.channel_dir(channel_id) / "messages.jsonl"
 
     @classmethod
     def from_env(cls, env_path: Path | None = None, data_dir: Path | None = None) -> "CrawlerConfig":
@@ -64,13 +74,12 @@ class CrawlerConfig:
         errors = []
         if not self.slack_user_token.startswith("xoxp-"):
             errors.append("SLACK_USER_TOKEN이 없거나 xoxp- 로 시작하지 않습니다.")
-        if not self.target_user_ids:
-            errors.append("TARGET_USER_IDS가 설정되지 않았습니다.")
         return errors
 
     def ensure_dirs(self) -> None:
         dirs = [
             self.raw_dir,
+            self.raw_dir / "channels",
             self.cleaned_dir / "by_channel",
             self.cleaned_dir / "by_period",
         ]
