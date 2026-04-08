@@ -12,6 +12,7 @@ from slack_sdk.errors import SlackApiError
 
 from slack_fetch.config import CrawlerConfig
 from slack_fetch.rate_limit import detect_tier, rate_wait, handle_rate_limit
+from slack_fetch.utils import checkpoint_load, checkpoint_save
 
 logger = logging.getLogger(__name__)
 
@@ -33,29 +34,19 @@ def _channel_checkpoint_path(cfg: CrawlerConfig, channel_id: str) -> Path:
 
 
 def _load_checkpoint(cfg: CrawlerConfig, user_id: str, method: str = "search") -> dict:
-    cp = _checkpoint_path(cfg, user_id, method)
-    if cp.exists():
-        return json.loads(cp.read_text(encoding="utf-8"))
-    return {}
+    return checkpoint_load(_checkpoint_path(cfg, user_id, method))
 
 
 def _load_channel_checkpoint(cfg: CrawlerConfig, channel_id: str) -> dict:
-    cp = _channel_checkpoint_path(cfg, channel_id)
-    if cp.exists():
-        return json.loads(cp.read_text(encoding="utf-8"))
-    return {}
+    return checkpoint_load(_channel_checkpoint_path(cfg, channel_id))
 
 
 def _save_checkpoint(cfg: CrawlerConfig, user_id: str, data: dict, method: str = "search") -> None:
-    _checkpoint_path(cfg, user_id, method).write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    checkpoint_save(_checkpoint_path(cfg, user_id, method), data)
 
 
 def _save_channel_checkpoint(cfg: CrawlerConfig, channel_id: str, data: dict) -> None:
-    _channel_checkpoint_path(cfg, channel_id).write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    checkpoint_save(_channel_checkpoint_path(cfg, channel_id), data)
 
 
 def _extract_thread_ts_from_permalink(permalink: str) -> str | None:

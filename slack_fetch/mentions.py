@@ -12,6 +12,7 @@ from slack_sdk.errors import SlackApiError
 
 from slack_fetch.config import CrawlerConfig
 from slack_fetch.rate_limit import handle_rate_limit
+from slack_fetch.utils import checkpoint_load, checkpoint_save
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +26,11 @@ def _checkpoint_path(cfg: CrawlerConfig, user_id: str) -> Path:
 
 
 def _load_checkpoint(cfg: CrawlerConfig, user_id: str) -> dict:
-    cp = _checkpoint_path(cfg, user_id)
-    if cp.exists():
-        return json.loads(cp.read_text(encoding="utf-8"))
-    return {}
+    return checkpoint_load(_checkpoint_path(cfg, user_id))
 
 
 def _save_checkpoint(cfg: CrawlerConfig, user_id: str, data: dict) -> None:
-    _checkpoint_path(cfg, user_id).write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    checkpoint_save(_checkpoint_path(cfg, user_id), data)
 
 
 def collect_mentions(client: WebClient, cfg: CrawlerConfig,

@@ -11,6 +11,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 from slack_fetch.config import CrawlerConfig
+from slack_fetch.utils import checkpoint_load, checkpoint_save
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +21,12 @@ def _thread_checkpoint_path(cfg: CrawlerConfig, user_id: str) -> Path:
 
 
 def _load_thread_checkpoint(cfg: CrawlerConfig, user_id: str) -> set[str]:
-    cp = _thread_checkpoint_path(cfg, user_id)
-    if cp.exists():
-        data = json.loads(cp.read_text(encoding="utf-8"))
-        return set(data.get("done", []))
-    return set()
+    data = checkpoint_load(_thread_checkpoint_path(cfg, user_id))
+    return set(data.get("done", []))
 
 
 def _save_thread_checkpoint(cfg: CrawlerConfig, user_id: str, done: set[str]) -> None:
-    _thread_checkpoint_path(cfg, user_id).write_text(
-        json.dumps({"done": list(done)}, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    checkpoint_save(_thread_checkpoint_path(cfg, user_id), {"done": list(done)})
 
 
 def _resolve_user(client: WebClient, user_id: str, cache: dict[str, str]) -> str:
