@@ -14,8 +14,6 @@
       "args": ["serve"],
       "env": {
         "SLACK_USER_TOKEN": "${user_config.slack_token}",
-        "TARGET_USER_IDS": "${user_config.target_user_ids}",
-        "TIMEZONE": "${user_config.timezone}",
         "SLACK_FETCH_DATA_DIR": "${CLAUDE_PLUGIN_DATA}/data"
       }
     }
@@ -24,13 +22,6 @@
     "slack_token": {
       "description": "Slack User Token (xoxp-...). Slack App > OAuth & Permissions에서 발급. 필요 scopes: channels:history, channels:read, users:read, search:read",
       "sensitive": true
-    },
-    "target_user_ids": {
-      "description": "수집 대상 Slack 사용자 ID (콤마 구분). Slack에서 프로필 > Copy member ID"
-    },
-    "timezone": {
-      "description": "타임존 (기본: Asia/Seoul)",
-      "default": "Asia/Seoul"
     }
   }
 }

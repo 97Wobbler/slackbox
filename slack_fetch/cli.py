@@ -40,46 +40,19 @@ def init(output: str):
     click.echo()
 
     # Slack User Token
-    click.echo("1) Slack User Token (xoxp-...)")
-    click.echo("   Slack 앱 설정 > OAuth & Permissions > User OAuth Token")
-    click.echo("   필요한 scopes: channels:history, channels:read, users:read, search:read")
+    click.echo("Slack User Token (xoxp-...)")
+    click.echo("  Slack 앱 설정 > OAuth & Permissions > User OAuth Token")
+    click.echo("  필요한 scopes: channels:history, channels:read, users:read, search:read")
     click.echo()
-    token = click.prompt("   Slack User Token", type=str)
+    token = click.prompt("  Slack User Token", type=str)
     if not token.startswith("xoxp-"):
-        click.secho("   경고: xoxp-로 시작하지 않습니다. User Token이 맞는지 확인하세요.", fg="yellow")
-    click.echo()
-
-    # Target User IDs
-    click.echo("2) 수집 대상 사용자 ID (콤마로 복수 입력 가능)")
-    click.echo("   Slack에서 프로필 클릭 > ... 더보기 > Copy member ID")
-    click.echo()
-    user_ids = click.prompt("   Target User IDs", type=str)
-    click.echo()
-
-    # Timezone
-    click.echo("3) 타임존 (기본: Asia/Seoul)")
-    timezone = click.prompt("   Timezone", default="Asia/Seoul", show_default=True)
-    click.echo()
-
-    # Data directory
-    click.echo("4) 데이터 저장 경로 (기본: data)")
-    data_dir = click.prompt("   Data directory", default="data", show_default=True)
-    click.echo()
-
-    # Anthropic API Key (선택)
-    click.echo("5) Anthropic API Key (선택사항, LLM 분석 기능 사용 시 필요)")
-    anthropic_key = click.prompt("   Anthropic API Key (없으면 Enter)", default="", show_default=False)
+        click.secho("  경고: xoxp-로 시작하지 않습니다. User Token이 맞는지 확인하세요.", fg="yellow")
     click.echo()
 
     # .env 생성
     lines = [
         f"SLACK_USER_TOKEN={token}",
-        f"TARGET_USER_IDS={user_ids}",
-        f"TIMEZONE={timezone}",
-        f"SLACK_FETCH_DATA_DIR={data_dir}",
     ]
-    if anthropic_key:
-        lines.append(f"ANTHROPIC_API_KEY={anthropic_key}")
 
     env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -125,7 +98,6 @@ def status():
         click.echo("\nslack-fetch init 을 실행하여 설정을 확인하세요.")
         sys.exit(1)
 
-    click.secho(f"대상 사용자: {', '.join(cfg.target_user_ids)}", fg="cyan")
     click.secho(f"데이터 경로: {cfg.data_dir.resolve()}", fg="cyan")
     click.echo()
 
@@ -137,23 +109,41 @@ def status():
     else:
         click.echo("채널: 미수집")
 
-    # 사용자별 현황
-    for uid in cfg.target_user_ids:
-        click.echo(f"\n--- {uid} ---")
+    # 채널 전체 수집 현황
+    channels_dir = cfg.raw_dir / "channels"
+    if channels_dir.exists():
+        ch_dirs = [d for d in channels_dir.iterdir() if d.is_dir()]
+        total_ch_msgs = 0
+        for d in ch_dirs:
+            mp = d / "messages.jsonl"
+            if mp.exists():
+                total_ch_msgs += sum(1 for _ in open(mp, encoding="utf-8"))
+        if ch_dirs:
+            click.echo(f"채널 수집: {len(ch_dirs)}개 채널, {total_ch_msgs}건")
 
+    # 사용자별 수집 현황
+    user_dirs = [d for d in cfg.raw_dir.iterdir()
+                 if d.is_dir() and d.name.startswith("U") and len(d.name) >= 9]
+    for ud in sorted(user_dirs):
+        uid = ud.name
         msg_path = cfg.user_messages_path(uid)
         if msg_path.exists():
             count = sum(1 for _ in open(msg_path, encoding="utf-8"))
-            click.echo(f"  메시지: {count}건")
-        else:
-            click.echo("  메시지: 미수집")
+            click.echo(f"사용자 {uid}: {count}건")
 
-        threads_dir = cfg.shared_threads_dir
-        if threads_dir.exists():
-            thread_files = list(threads_dir.glob("*.jsonl"))
-            click.echo(f"  스레드 (공유): {len(thread_files)}개")
-        else:
-            click.echo("  스레드: 미수집")
+    # 공유 스레드
+    threads_dir = cfg.shared_threads_dir
+    if threads_dir.exists():
+        thread_files = list(threads_dir.glob("*.jsonl"))
+        if thread_files:
+            click.echo(f"스레드 (공유): {len(thread_files)}개")
+
+    # 검색 데이터
+    search_dir = cfg.raw_dir / "search"
+    if search_dir.exists():
+        search_files = list(search_dir.glob("*.jsonl"))
+        if search_files:
+            click.echo(f"검색 데이터: {len(search_files)}개")
 
 
 # ── 엔트리포인트 ─────────────────────────────────────────────────

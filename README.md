@@ -74,8 +74,6 @@ slack-fetch serve
 | 변수 | 필수 | 설명 |
 |------|------|------|
 | `SLACK_USER_TOKEN` | O | Slack User Token (`xoxp-...`) |
-| `TARGET_USER_IDS` | | 수집 대상 사용자 ID (콤마 구분). `crawl_user`/`crawl_mentions` 시 사용. 채널 수집/키워드 검색 시에는 불필요 |
-| `TIMEZONE` | | 타임존 (기본: `Asia/Seoul`) |
 | `SLACK_FETCH_DATA_DIR` | | 데이터 저장 경로 (기본: `data`) |
 
 ## 사용 예시
