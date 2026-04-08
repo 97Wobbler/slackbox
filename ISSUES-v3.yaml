@@ -1,0 +1,36 @@
+# slack-fetch-mcp 리팩터링 백로그 (v3 — 검토 반영)
+
+issues:
+  # ── Wave 1 (병렬) ──
+  R3a:
+    title: "utils.py — 체크포인트 공통 함수 추출"
+    blocked_by: []
+    file: utils.py (신규), messages.py, mentions.py, threads.py
+
+  R1a:
+    title: "formatting.py — Markdown 포매팅 함수 분리"
+    blocked_by: []
+    file: mcp_server.py → formatting.py (신규)
+
+  # ── Wave 2 (병렬) ──
+  R3b:
+    title: "utils.py — JSONL 읽기/쓰기 + _safe_json_loads 이동"
+    blocked_by: [R3a]
+    file: utils.py, mcp_server.py
+
+  R2:
+    title: "collect_via_history user/channel 모드 분리"
+    blocked_by: [R3a]
+    file: messages.py
+
+  # ── Wave 3 ──
+  R1b:
+    title: "data_loader.py — _load_all_messages 분리"
+    blocked_by: [R3b, R1a]
+    file: mcp_server.py → data_loader.py (신규)
+
+  # ── Wave 4 ──
+  R1c:
+    title: "mcp_server.py import 정리 + __init__.py 업데이트"
+    blocked_by: [R1a, R1b]
+    file: mcp_server.py, __init__.py
