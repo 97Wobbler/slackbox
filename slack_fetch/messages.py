@@ -18,19 +18,42 @@ logger = logging.getLogger(__name__)
 
 # -- Checkpoint --
 
-def _checkpoint_path(cfg: CrawlerConfig, user_id: str) -> Path:
-    return cfg.user_raw_dir(user_id) / ".checkpoint.json"
+def _checkpoint_path(cfg: CrawlerConfig, user_id: str | None, method: str = "search") -> Path:
+    if user_id is None:
+        raise ValueError("user_id=None에서는 _checkpoint_path를 직접 호출하지 마세요.")
+    filename = f".{method}_checkpoint.json"
+    return cfg.user_raw_dir(user_id) / filename
 
 
-def _load_checkpoint(cfg: CrawlerConfig, user_id: str) -> dict:
-    cp = _checkpoint_path(cfg, user_id)
+def _channel_checkpoint_path(cfg: CrawlerConfig, channel_id: str) -> Path:
+    """user_id=None (채널 전체 수집)일 때 채널 기반 체크포인트 경로."""
+    d = cfg.channel_dir(channel_id)
+    d.mkdir(parents=True, exist_ok=True)
+    return d / ".checkpoint.json"
+
+
+def _load_checkpoint(cfg: CrawlerConfig, user_id: str, method: str = "search") -> dict:
+    cp = _checkpoint_path(cfg, user_id, method)
     if cp.exists():
         return json.loads(cp.read_text(encoding="utf-8"))
     return {}
 
 
-def _save_checkpoint(cfg: CrawlerConfig, user_id: str, data: dict) -> None:
-    _checkpoint_path(cfg, user_id).write_text(
+def _load_channel_checkpoint(cfg: CrawlerConfig, channel_id: str) -> dict:
+    cp = _channel_checkpoint_path(cfg, channel_id)
+    if cp.exists():
+        return json.loads(cp.read_text(encoding="utf-8"))
+    return {}
+
+
+def _save_checkpoint(cfg: CrawlerConfig, user_id: str, data: dict, method: str = "search") -> None:
+    _checkpoint_path(cfg, user_id, method).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def _save_channel_checkpoint(cfg: CrawlerConfig, channel_id: str, data: dict) -> None:
+    _channel_checkpoint_path(cfg, channel_id).write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
@@ -121,7 +144,7 @@ def collect_via_search(client: WebClient, cfg: CrawlerConfig,
             page += 1
             rate_wait(1.0)
 
-    _save_checkpoint(cfg, uid, {"phase": "search_done", "total_messages": total})
+    _save_checkpoint(cfg, uid, {"phase": "search_done", "total_messages": total}, method="search")
     logger.info("[%s] search.messages로 메시지 %d건 수집 완료", uid, total)
     return total
 
@@ -136,7 +159,7 @@ def collect_via_history(client: WebClient, cfg: CrawlerConfig, channels: list[di
     messages_path = cfg.user_messages_path(uid)
     messages_path.parent.mkdir(parents=True, exist_ok=True)
 
-    ckpt = _load_checkpoint(cfg, uid)
+    ckpt = _load_checkpoint(cfg, uid, method="history")
     start_idx = ckpt.get("last_channel_idx", 0) if ckpt.get("phase") == "history" else 0
     total = ckpt.get("collected_messages", 0)
     delay = cfg.base_delay
@@ -206,7 +229,7 @@ def collect_via_history(client: WebClient, cfg: CrawlerConfig, channels: list[di
                 "last_channel_idx": i + 1,
                 "last_channel_id": ch["id"],
                 "collected_messages": total,
-            })
+            }, method="history")
             rate_wait(delay)
 
     logger.info("[%s] conversations.history로 메시지 %d건 수집 완료", uid, total)
