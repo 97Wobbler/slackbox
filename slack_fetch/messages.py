@@ -154,25 +154,58 @@ def collect_via_search(client: WebClient, cfg: CrawlerConfig,
 def collect_via_history(client: WebClient, cfg: CrawlerConfig, channels: list[dict],
                         *, since: str | None = None, until: str | None = None,
                         user_id: str | None = None) -> int:
-    """conversations.history로 전체 채널을 순회하며 대상 사용자 메시지를 수집."""
-    uid = user_id or cfg.target_user_id
-    messages_path = cfg.user_messages_path(uid)
-    messages_path.parent.mkdir(parents=True, exist_ok=True)
+    """conversations.history로 전체 채널을 순회하며 메시지를 수집.
 
-    ckpt = _load_checkpoint(cfg, uid, method="history")
-    start_idx = ckpt.get("last_channel_idx", 0) if ckpt.get("phase") == "history" else 0
-    total = ckpt.get("collected_messages", 0)
+    user_id가 지정되면 해당 사용자의 메시지만 수집 (기존 동작).
+    user_id가 None이면 채널 전체 대화를 수집 (사용자 필터 없음).
+    """
+    collect_all = user_id is None
+    uid = None if collect_all else (user_id or cfg.target_user_id)
+
     delay = cfg.base_delay
     tier_detected = False
+    grand_total = 0
 
-    with open(messages_path, "a", encoding="utf-8") as f:
-        for i, ch in enumerate(channels):
+    # user_id 지정 시: 기존 채널 인덱스 기반 체크포인트
+    if not collect_all:
+        messages_path = cfg.user_messages_path(uid)
+        messages_path.parent.mkdir(parents=True, exist_ok=True)
+        ckpt = _load_checkpoint(cfg, uid, method="history")
+        start_idx = ckpt.get("last_channel_idx", 0) if ckpt.get("phase") == "history" else 0
+        user_total = ckpt.get("collected_messages", 0)
+
+    for i, ch in enumerate(channels):
+        # ── user_id 지정 모드: 채널 인덱스 skip ──
+        if not collect_all:
             if i < start_idx:
                 continue
+            ch_total = user_total  # 기존 누적 카운터 유지
+        else:
+            # ── 채널 전체 수집 모드: 채널별 독립 처리 ──
+            messages_path = cfg.channel_messages_path(ch["id"])
+            messages_path.parent.mkdir(parents=True, exist_ok=True)
+            ch_ckpt = _load_channel_checkpoint(cfg, ch["id"])
 
-            cursor = None
-            logger.info("[%s] [%d/%d] #%s 수집 중...", uid, i + 1, len(channels), ch["name"])
+            if ch_ckpt.get("phase") == "history_done":
+                prev = ch_ckpt.get("collected_messages", 0)
+                grand_total += prev
+                logger.info("[channel] #%s 이미 수집 완료 (%d건), 건너뜀", ch["name"], prev)
+                continue
 
+            ch_total = ch_ckpt.get("collected_messages", 0)
+
+        label = f"channel:{ch['name']}" if collect_all else uid
+        cursor = None
+        # 채널 전체 수집: 커서 기반 이어받기
+        if collect_all:
+            ch_ckpt_data = _load_channel_checkpoint(cfg, ch["id"])
+            if ch_ckpt_data.get("phase") == "history":
+                cursor = ch_ckpt_data.get("next_cursor")
+                ch_total = ch_ckpt_data.get("collected_messages", 0)
+
+        logger.info("[%s] [%d/%d] #%s 수집 중...", label, i + 1, len(channels), ch["name"])
+
+        with open(messages_path, "a", encoding="utf-8") as f:
             while True:
                 try:
                     kwargs = {"channel": ch["id"], "limit": cfg.page_limit}
@@ -201,13 +234,15 @@ def collect_via_history(client: WebClient, cfg: CrawlerConfig, channels: list[di
                     raise
 
                 for msg in resp.get("messages", []):
-                    if msg.get("user") != uid:
+                    # user_id가 지정된 경우에만 사용자 필터 적용
+                    if not collect_all and msg.get("user") != uid:
                         continue
                     if msg.get("subtype") in ("channel_join", "channel_leave", "bot_message"):
                         continue
 
                     record = {
                         "ts": msg.get("ts", ""),
+                        "user": msg.get("user", ""),
                         "channel_id": ch["id"],
                         "channel_name": ch["name"],
                         "text": msg.get("text", ""),
@@ -217,20 +252,41 @@ def collect_via_history(client: WebClient, cfg: CrawlerConfig, channels: list[di
                         "files": [fi.get("name", "") for fi in msg.get("files", [])],
                     }
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
-                    total += 1
+                    ch_total += 1
 
                 cursor = resp.get("response_metadata", {}).get("next_cursor")
                 if not cursor:
                     break
+                # 채널 전체 수집: 페이지마다 체크포인트 저장 (중단 대비)
+                if collect_all:
+                    _save_channel_checkpoint(cfg, ch["id"], {
+                        "phase": "history",
+                        "next_cursor": cursor,
+                        "collected_messages": ch_total,
+                    })
                 rate_wait(delay)
 
+        # 체크포인트 저장
+        if collect_all:
+            _save_channel_checkpoint(cfg, ch["id"], {
+                "phase": "history_done",
+                "collected_messages": ch_total,
+            })
+            grand_total += ch_total
+        else:
+            user_total = ch_total
             _save_checkpoint(cfg, uid, {
                 "phase": "history",
                 "last_channel_idx": i + 1,
                 "last_channel_id": ch["id"],
-                "collected_messages": total,
+                "collected_messages": user_total,
             }, method="history")
-            rate_wait(delay)
 
-    logger.info("[%s] conversations.history로 메시지 %d건 수집 완료", uid, total)
-    return total
+        rate_wait(delay)
+
+    if collect_all:
+        logger.info("[channel-all] conversations.history로 메시지 %d건 수집 완료", grand_total)
+        return grand_total
+    else:
+        logger.info("[%s] conversations.history로 메시지 %d건 수집 완료", uid, user_total)
+        return user_total
