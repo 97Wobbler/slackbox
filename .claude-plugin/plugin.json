@@ -16,7 +16,7 @@
         "SLACK_USER_TOKEN": "${user_config.slack_token}",
         "TARGET_USER_IDS": "${user_config.target_user_ids}",
         "TIMEZONE": "${user_config.timezone}",
-        "SLACK_CRAWLER_DATA_DIR": "${CLAUDE_PLUGIN_DATA}/data"
+        "SLACK_FETCH_DATA_DIR": "${CLAUDE_PLUGIN_DATA}/data"
       }
     }
   },

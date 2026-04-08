@@ -57,7 +57,7 @@ class CrawlerConfig:
             slack_user_token=os.getenv("SLACK_USER_TOKEN", ""),
             target_user_ids=user_ids,
             timezone=os.getenv("TIMEZONE", "Asia/Seoul"),
-            data_dir=data_dir or Path(os.getenv("SLACK_CRAWLER_DATA_DIR", "data")),
+            data_dir=data_dir or Path(os.getenv("SLACK_FETCH_DATA_DIR", "data")),
         )
 
     def validate(self) -> list[str]:

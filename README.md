@@ -74,7 +74,7 @@ slack-fetch serve
 | `SLACK_USER_TOKEN` | O | Slack User Token (`xoxp-...`) |
 | `TARGET_USER_IDS` | O | 수집 대상 사용자 ID (콤마 구분) |
 | `TIMEZONE` | | 타임존 (기본: `Asia/Seoul`) |
-| `SLACK_CRAWLER_DATA_DIR` | | 데이터 저장 경로 (기본: `data`) |
+| `SLACK_FETCH_DATA_DIR` | | 데이터 저장 경로 (기본: `data`) |
 
 ## 사용 예시
 
@@ -85,7 +85,7 @@ Claude Code에서:
 → crawl_channel("general", 7) → get_collected_data("channel:general")
 
 "홍길동의 최근 1개월 활동 분석해줘"
-→ crawl_user("U07AF1YDVD1", 30) → get_collected_data("all")
+→ crawl_user("UXXXXXXXXXX", 30) → get_collected_data("all")
 ```
 
 ## License

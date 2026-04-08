@@ -76,7 +76,7 @@ def init(output: str):
         f"SLACK_USER_TOKEN={token}",
         f"TARGET_USER_IDS={user_ids}",
         f"TIMEZONE={timezone}",
-        f"SLACK_CRAWLER_DATA_DIR={data_dir}",
+        f"SLACK_FETCH_DATA_DIR={data_dir}",
     ]
     if anthropic_key:
         lines.append(f"ANTHROPIC_API_KEY={anthropic_key}")
