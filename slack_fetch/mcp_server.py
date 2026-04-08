@@ -290,43 +290,39 @@ def crawl_threads(channel: str, thread_ts_list: list[str]) -> str:
     collected = 0
     errors_list: list[str] = []
 
-    for uid in cfg.target_user_ids:
-        threads_dir = cfg.user_threads_dir(uid)
-        threads_dir.mkdir(parents=True, exist_ok=True)
+    threads_dir = cfg.shared_threads_dir
+    threads_dir.mkdir(parents=True, exist_ok=True)
 
-        for thread_ts in thread_ts_list:
-            key = f"{channel_id}_{thread_ts}"
-            out_path = threads_dir / f"{key}.jsonl"
+    for thread_ts in thread_ts_list:
+        key = f"{channel_id}_{thread_ts}"
+        out_path = threads_dir / f"{key}.jsonl"
 
-            if out_path.exists():
+        if out_path.exists():
+            collected += 1
+            continue
+
+        try:
+            resp = client.conversations_replies(
+                channel=channel_id, ts=thread_ts, limit=cfg.page_limit
+            )
+            replies = resp.get("messages", [])
+
+            if replies:
+                target_ids = cfg.all_user_ids_set
+                with open(out_path, "w", encoding="utf-8") as f:
+                    for msg in replies:
+                        msg_uid = msg.get("user", "unknown")
+                        f.write(json.dumps({
+                            "ts": msg.get("ts", ""),
+                            "user": msg_uid,
+                            "user_name": msg_uid,
+                            "text": msg.get("text", ""),
+                            "is_target_user": msg_uid in target_ids,
+                        }, ensure_ascii=False) + "\n")
                 collected += 1
-                continue
 
-            try:
-                resp = client.conversations_replies(
-                    channel=channel_id, ts=thread_ts, limit=cfg.page_limit
-                )
-                replies = resp.get("messages", [])
-
-                if replies:
-                    target_ids = cfg.all_user_ids_set
-                    with open(out_path, "w", encoding="utf-8") as f:
-                        for msg in replies:
-                            msg_uid = msg.get("user", "unknown")
-                            f.write(json.dumps({
-                                "ts": msg.get("ts", ""),
-                                "user": msg_uid,
-                                "user_name": msg_uid,
-                                "text": msg.get("text", ""),
-                                "is_target_user": msg_uid in target_ids,
-                            }, ensure_ascii=False) + "\n")
-                    collected += 1
-
-            except Exception as e:
-                errors_list.append(f"{thread_ts}: {e}")
-
-        # 첫 번째 사용자 디렉토리에만 저장
-        break
+        except Exception as e:
+            errors_list.append(f"{thread_ts}: {e}")
 
     result = f"#{channel_name} 스레드 {collected}/{len(thread_ts_list)}개 수집 완료."
     if errors_list:
@@ -372,10 +368,9 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
     if scope == "summary":
         channels = _load_channels(cfg)
         thread_count = 0
-        for uid in cfg.target_user_ids:
-            td = cfg.user_threads_dir(uid)
-            if td.exists():
-                thread_count += len(list(td.glob("*.jsonl")))
+        td = cfg.shared_threads_dir
+        if td.exists():
+            thread_count = len(list(td.glob("*.jsonl")))
 
         if not all_messages:
             return (

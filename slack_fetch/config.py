@@ -80,6 +80,7 @@ class CrawlerConfig:
         dirs = [
             self.raw_dir,
             self.raw_dir / "channels",
+            self.shared_threads_dir,
             self.cleaned_dir / "by_channel",
             self.cleaned_dir / "by_period",
         ]

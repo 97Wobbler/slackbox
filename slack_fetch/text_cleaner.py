@@ -64,18 +64,17 @@ def ts_to_str(ts: str, tz_name: str = "Asia/Seoul", fmt: str = "%Y-%m-%d %H:%M")
 
 
 def load_user_map_from_threads(cfg: CrawlerConfig) -> dict[str, str]:
-    """모든 user의 스레드 JSONL에서 user_id -> user_name 매핑 추출."""
+    """공유 스레드 디렉토리의 JSONL에서 user_id -> user_name 매핑 추출."""
     user_map: dict[str, str] = {}
-    for uid in cfg.target_user_ids:
-        threads_dir = cfg.user_threads_dir(uid)
-        if not threads_dir.exists():
-            continue
-        for fp in threads_dir.glob("*.jsonl"):
-            with open(fp, encoding="utf-8") as f:
-                for line in f:
-                    rec = json.loads(line)
-                    if rec.get("user") and rec.get("user_name"):
-                        user_map[rec["user"]] = rec["user_name"]
+    threads_dir = cfg.shared_threads_dir
+    if not threads_dir.exists():
+        return user_map
+    for fp in threads_dir.glob("*.jsonl"):
+        with open(fp, encoding="utf-8") as f:
+            for line in f:
+                rec = json.loads(line)
+                if rec.get("user") and rec.get("user_name"):
+                    user_map[rec["user"]] = rec["user_name"]
     return user_map
 
 

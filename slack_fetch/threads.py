@@ -59,7 +59,7 @@ def collect_threads(client: WebClient, cfg: CrawlerConfig, *, user_id: str | Non
     """messages.jsonl에서 스레드가 있는 메시지를 찾아 대화 전문을 수집."""
     uid = user_id or cfg.target_user_id
     messages_path = cfg.user_messages_path(uid)
-    threads_dir = cfg.user_threads_dir(uid)
+    threads_dir = cfg.shared_threads_dir
     threads_dir.mkdir(parents=True, exist_ok=True)
 
     if not messages_path.exists():
@@ -104,6 +104,16 @@ def collect_threads(client: WebClient, cfg: CrawlerConfig, *, user_id: str | Non
             continue
 
         out_path = threads_dir / f"{key}.jsonl"
+
+        # 공유 캐시: 다른 사용자 수집 시 이미 저장된 파일이면 API 호출 skip
+        if out_path.exists():
+            logger.debug("[%s] 스레드 %s 이미 존재 — skip", uid, key)
+            done.add(key)
+            collected += 1
+            if collected % 10 == 0:
+                _save_thread_checkpoint(cfg, uid, done)
+            continue
+
         replies: list[dict] = []
         cursor = None
 

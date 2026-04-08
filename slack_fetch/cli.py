@@ -148,10 +148,10 @@ def status():
         else:
             click.echo("  메시지: 미수집")
 
-        threads_dir = cfg.user_threads_dir(uid)
+        threads_dir = cfg.shared_threads_dir
         if threads_dir.exists():
             thread_files = list(threads_dir.glob("*.jsonl"))
-            click.echo(f"  스레드: {len(thread_files)}개")
+            click.echo(f"  스레드 (공유): {len(thread_files)}개")
         else:
             click.echo("  스레드: 미수집")
 
