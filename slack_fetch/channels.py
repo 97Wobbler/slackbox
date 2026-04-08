@@ -14,15 +14,27 @@ from slack_fetch.config import CrawlerConfig
 logger = logging.getLogger(__name__)
 
 
-def collect_channels(client: WebClient, cfg: CrawlerConfig, *, include_archived: bool = False) -> list[dict]:
-    """가입한 공개 채널 목록을 수집하고 channels.json에 저장."""
+def collect_channels(
+    client: WebClient,
+    cfg: CrawlerConfig,
+    *,
+    include_archived: bool = False,
+    channel_types: str = "public_channel",
+) -> list[dict]:
+    """채널 목록을 수집하고 channels.json에 저장.
+
+    Args:
+        channel_types: conversations.list에 전달할 types 값.
+            예: "public_channel", "public_channel,private_channel",
+            "public_channel,private_channel,im,mpim"
+    """
     channels: list[dict] = []
     cursor = None
 
     while True:
         try:
             resp = client.conversations_list(
-                types="public_channel",
+                types=channel_types,
                 limit=cfg.page_limit,
                 exclude_archived=not include_archived,
                 cursor=cursor or "",
@@ -32,15 +44,20 @@ def collect_channels(client: WebClient, cfg: CrawlerConfig, *, include_archived:
             raise
 
         for ch in resp["channels"]:
-            if not ch.get("is_member"):
+            is_im = ch.get("is_im", False)
+            is_mpim = ch.get("is_mpim", False)
+            # 일반 채널은 is_member 확인, DM/그룹DM은 항상 포함
+            if not (is_im or is_mpim) and not ch.get("is_member"):
                 continue
             channels.append({
                 "id": ch["id"],
-                "name": ch["name"],
+                "name": ch.get("name") or ch.get("user", ch["id"]),
                 "purpose": (ch.get("purpose") or {}).get("value", ""),
                 "topic": (ch.get("topic") or {}).get("value", ""),
                 "num_members": ch.get("num_members", 0),
                 "is_archived": ch.get("is_archived", False),
+                "is_im": is_im,
+                "is_mpim": is_mpim,
             })
 
         cursor = resp.get("response_metadata", {}).get("next_cursor")

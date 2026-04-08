@@ -170,24 +170,45 @@ def _format_weekly_md(
 # ── MCP Tools ────────────────────────────────────────────────────
 
 @mcp.tool()
-def list_channels() -> str:
-    """워크스페이스의 가입된 공개 채널 목록을 반환합니다.
+def list_channels(include_private: bool = False, include_dm: bool = False) -> str:
+    """워크스페이스의 가입된 채널 목록을 반환합니다.
 
-    로컬 캐시(channels.json)가 있으면 캐시를 사용하고,
-    없으면 Slack API에서 수집합니다.
+    Args:
+        include_private: True이면 비공개 채널도 포함합니다.
+        include_dm: True이면 DM(im) 및 그룹 DM(mpim)도 포함합니다.
+
+    로컬 캐시(channels.json)가 있고 기본 옵션(public만)이면 캐시를 사용하고,
+    없거나 추가 타입이 요청되면 Slack API에서 수집합니다.
     """
     cfg = _get_cfg()
-    channels = _load_channels(cfg)
+
+    # channel_types 조합
+    types_list = ["public_channel"]
+    if include_private:
+        types_list.append("private_channel")
+    if include_dm:
+        types_list.extend(["im", "mpim"])
+    channel_types = ",".join(types_list)
+
+    # 기본 옵션(public만)이면 캐시 시도
+    use_cache = not include_private and not include_dm
+    channels = _load_channels(cfg) if use_cache else []
 
     if not channels:
         client = _get_client()
-        channels = collect_channels(client, cfg)
+        channels = collect_channels(client, cfg, channel_types=channel_types)
 
     lines = [f"총 {len(channels)}개 채널:\n"]
     for ch in sorted(channels, key=lambda c: -c.get("num_members", 0)):
         archived = " [archived]" if ch.get("is_archived") else ""
         purpose = f" — {ch['purpose']}" if ch.get("purpose") else ""
-        lines.append(f"- #{ch['name']} ({ch.get('num_members', 0)}명){archived}{purpose}")
+        if ch.get("is_im"):
+            prefix = "[DM] "
+        elif ch.get("is_mpim"):
+            prefix = "[GroupDM] "
+        else:
+            prefix = "#"
+        lines.append(f"- {prefix}{ch['name']} ({ch.get('num_members', 0)}명){archived}{purpose}")
 
     return "\n".join(lines)
 
