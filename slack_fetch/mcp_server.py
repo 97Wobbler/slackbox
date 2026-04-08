@@ -10,17 +10,21 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from mcp.server import FastMCP
 
+from slack_sdk.errors import SlackApiError
+
 from slack_fetch.config import CrawlerConfig
 from slack_fetch.client import create_slack_client
 from slack_fetch.channels import collect_channels
 from slack_fetch.messages import collect_via_search, collect_via_history
 from slack_fetch.threads import collect_threads
+from slack_fetch.rate_limit import rate_wait, handle_rate_limit
 from slack_fetch.text_cleaner import (
     SlackTextCleaner,
     ts_to_dt,
@@ -215,18 +219,17 @@ def crawl_channel(channel: str, days: int = 7) -> str:
         return f"채널 '{channel}'을 찾을 수 없습니다. list_channels로 확인하세요."
 
     since = _since_str(days) if days > 0 else None
-    total = 0
 
-    for uid in cfg.target_user_ids:
-        count = collect_via_history(
-            client, cfg, [target_ch], since=since, user_id=uid
-        )
-        total += count
+    # user_id=None → 채널 전체 대화 수집 (사용자 필터 없음)
+    total = collect_via_history(
+        client, cfg, [target_ch], since=since, user_id=None
+    )
 
     period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
     return (
-        f"#{target_ch['name']} 채널 {period_desc} 대화 수집 완료.\n"
-        f"수집된 메시지: {total}건 (대상 사용자 {len(cfg.target_user_ids)}명)\n"
+        f"#{target_ch['name']} 채널 {period_desc} 전체 대화 수집 완료.\n"
+        f"수집된 메시지: {total}건\n"
+        f"저장 위치: {cfg.channel_messages_path(target_ch['id'])}\n"
         f"get_collected_data로 수집 데이터를 조회할 수 있습니다."
     )
 
@@ -263,6 +266,102 @@ def crawl_user(user_id: str, days: int = 30) -> str:
         f"수집 방법: {method}\n"
         f"수집된 메시지: {total}건\n"
         f"스레드 수집이 필요하면 crawl_threads를 실행하세요."
+    )
+
+
+@mcp.tool()
+def search_messages(query: str, days: int = 30) -> str:
+    """키워드로 Slack 메시지를 검색하여 수집합니다.
+
+    Slack search.messages API를 사용하여 임의 검색어로 메시지를 찾습니다.
+
+    Args:
+        query: 검색 쿼리. Slack 검색 문법 지원 (예: "배포 in:#general", "from:@홍길동 버그")
+        days: 검색 기간 (일). 기본값 30일. 0이면 전체 기간.
+    """
+    cfg = _get_cfg()
+    client = _get_client()
+
+    # 검색 디렉토리 생성
+    search_dir = cfg.raw_dir / "search"
+    search_dir.mkdir(parents=True, exist_ok=True)
+
+    # 쿼리에 기간 조건 추가
+    full_query = query
+    since = _since_str(days)
+    if since:
+        full_query += f" after:{since}"
+
+    # 파일명용 쿼리 sanitize
+    sanitized = re.sub(r'[^\w가-힣\s-]', '_', query).strip()
+    sanitized = re.sub(r'\s+', '_', sanitized)
+    if not sanitized:
+        sanitized = "empty_query"
+    out_path = search_dir / f"{sanitized}.jsonl"
+
+    # 중복 방지: 기존 파일에서 seen_ts 로드
+    seen_ts: set[str] = set()
+    if out_path.exists():
+        with open(out_path, encoding="utf-8") as ef:
+            for line in ef:
+                if line.strip():
+                    rec = json.loads(line)
+                    seen_ts.add(f"{rec['ts']}_{rec.get('channel_id', '')}")
+
+    total = 0
+    page = 1
+
+    with open(out_path, "a", encoding="utf-8") as f:
+        while True:
+            try:
+                resp = client.search_messages(
+                    query=full_query, sort="timestamp",
+                    sort_dir="asc", count=100, page=page
+                )
+            except SlackApiError as e:
+                if e.response.status_code == 429:
+                    handle_rate_limit(e)
+                    continue
+                raise
+
+            messages = resp.get("messages", {}).get("matches", [])
+            if not messages:
+                break
+
+            for msg in messages:
+                ts = msg.get("ts", "")
+                channel_id = msg.get("channel", {}).get("id", "")
+                dedup_key = f"{ts}_{channel_id}"
+                if dedup_key in seen_ts:
+                    continue
+                seen_ts.add(dedup_key)
+
+                record = {
+                    "ts": ts,
+                    "channel_id": channel_id,
+                    "channel_name": msg.get("channel", {}).get("name", ""),
+                    "user": msg.get("user") or msg.get("username", ""),
+                    "text": msg.get("text", ""),
+                    "thread_ts": msg.get("thread_ts"),
+                    "reply_count": msg.get("reply_count", 0),
+                    "permalink": msg.get("permalink", ""),
+                }
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                total += 1
+
+            paging = resp.get("messages", {}).get("paging", {})
+            if page >= paging.get("pages", 1):
+                break
+            page += 1
+            rate_wait(1.0)
+
+    period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
+    return (
+        f"키워드 검색 수집 완료.\n"
+        f"검색어: {query}\n"
+        f"기간: {period_desc}\n"
+        f"수집된 메시지: {total}건 (기존 중복 제외)\n"
+        f"저장 경로: {out_path}"
     )
 
 
