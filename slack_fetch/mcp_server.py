@@ -222,9 +222,21 @@ def crawl_channel(channel: str, days: int = 7) -> str:
     since = _since_str(days) if days > 0 else None
 
     # user_id=None → 채널 전체 대화 수집 (사용자 필터 없음)
-    total = collect_via_history(
-        client, cfg, [target_ch], since=since, user_id=None
-    )
+    try:
+        total = collect_via_history(
+            client, cfg, [target_ch], since=since, user_id=None
+        )
+    except SlackApiError as e:
+        error_code = e.response.get("error", "unknown_error")
+        if error_code in ("token_revoked", "invalid_auth", "not_authed", "account_inactive"):
+            return f"Slack 인증 오류 ({error_code}): 토큰이 만료되었거나 무효합니다. 재발급이 필요합니다."
+        if error_code == "missing_scope":
+            return f"Slack 권한 오류 ({error_code}): 토큰에 필요한 scope가 없습니다. channels:history 권한을 확인하세요."
+        if error_code == "channel_not_found":
+            return f"Slack API 오류 ({error_code}): 채널 '{channel}'을 찾을 수 없거나 접근 권한이 없습니다."
+        if error_code == "not_in_channel":
+            return f"Slack API 오류 ({error_code}): 봇이 #{target_ch['name']} 채널에 참여하지 않았습니다."
+        return f"Slack API 오류 ({error_code}): {e}"
 
     period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
     return (
@@ -254,20 +266,39 @@ def crawl_user(user_id: str, days: int = 30, include_threads: bool = False) -> s
     try:
         total = collect_via_search(client, cfg, since=since, user_id=user_id)
         method = "search.messages"
+    except SlackApiError as e:
+        error_code = e.response.get("error", "unknown_error")
+        if error_code in ("token_revoked", "invalid_auth", "not_authed", "account_inactive"):
+            return f"Slack 인증 오류 ({error_code}): 토큰이 만료되었거나 무효합니다. 재발급이 필요합니다."
+        if error_code == "missing_scope":
+            return f"Slack 권한 오류 ({error_code}): 토큰에 필요한 scope가 없습니다. search:read 권한을 확인하세요."
+        logger.warning("search.messages 실패 (%s), conversations.history로 fallback", error_code)
+        try:
+            channels = _load_channels(cfg)
+            if not channels:
+                channels = collect_channels(client, cfg)
+            total = collect_via_history(client, cfg, channels, since=since, user_id=user_id)
+            method = "conversations.history"
+        except SlackApiError as e2:
+            error_code2 = e2.response.get("error", "unknown_error")
+            if error_code2 in ("token_revoked", "invalid_auth", "not_authed", "account_inactive"):
+                return f"Slack 인증 오류 ({error_code2}): 토큰이 만료되었거나 무효합니다. 재발급이 필요합니다."
+            if error_code2 == "missing_scope":
+                return f"Slack 권한 오류 ({error_code2}): 토큰에 필요한 scope가 없습니다."
+            return f"Slack API 오류 ({error_code2}): {e2}"
     except Exception as e:
-        logger.warning("search.messages 실패, conversations.history로 fallback: %s", e)
-        channels = _load_channels(cfg)
-        if not channels:
-            channels = collect_channels(client, cfg)
-        total = collect_via_history(client, cfg, channels, since=since, user_id=user_id)
-        method = "conversations.history"
+        return f"예기치 않은 오류: {e}"
 
     period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
 
     thread_info = ""
     if include_threads:
-        thread_count = collect_threads(client, cfg, user_id=user_id)
-        thread_info = f"\n스레드 수집: {thread_count}개 완료"
+        try:
+            thread_count = collect_threads(client, cfg, user_id=user_id)
+            thread_info = f"\n스레드 수집: {thread_count}개 완료"
+        except SlackApiError as e:
+            error_code = e.response.get("error", "unknown_error")
+            thread_info = f"\n스레드 수집 실패 ({error_code}): {e}"
 
     return (
         f"사용자 {user_id}의 {period_desc} 활동 수집 완료.\n"
@@ -314,8 +345,9 @@ def search_messages(query: str, days: int = 30) -> str:
         with open(out_path, encoding="utf-8") as ef:
             for line in ef:
                 if line.strip():
-                    rec = json.loads(line)
-                    seen_ts.add(f"{rec['ts']}_{rec.get('channel_id', '')}")
+                    rec = _safe_json_loads(line, out_path)
+                    if rec is not None:
+                        seen_ts.add(f"{rec['ts']}_{rec.get('channel_id', '')}")
 
     total = 0
     page = 1
@@ -493,6 +525,15 @@ def crawl_mentions(user_id: str, days: int = 30) -> str:
     )
 
 
+def _safe_json_loads(line: str, filepath: Path | str = "") -> dict | None:
+    """JSON 라인을 안전하게 파싱. 불완전한 라인은 skip하고 None 반환."""
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        logger.warning("불완전한 JSON 라인 스킵 (파일: %s): %s", filepath, line[:120])
+        return None
+
+
 def _load_all_messages(cfg: CrawlerConfig) -> tuple[list[dict], dict[str, int]]:
     """3가지 소스에서 메시지를 로드하고 ts+channel_id 기반 dedup.
 
@@ -521,7 +562,9 @@ def _load_all_messages(cfg: CrawlerConfig) -> tuple[list[dict], dict[str, int]]:
         with open(mp, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
-                    _add(json.loads(line), "user")
+                    msg = _safe_json_loads(line, mp)
+                    if msg is not None:
+                        _add(msg, "user")
 
     # 2) 채널 전체 대화: data/raw/channels/*/messages.jsonl
     channels_dir = cfg.raw_dir / "channels"
@@ -530,7 +573,9 @@ def _load_all_messages(cfg: CrawlerConfig) -> tuple[list[dict], dict[str, int]]:
             with open(ch_msg_path, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
-                        _add(json.loads(line), "channel")
+                        msg = _safe_json_loads(line, ch_msg_path)
+                        if msg is not None:
+                            _add(msg, "channel")
 
     # 3) 키워드 검색 결과: data/raw/search/*.jsonl
     search_dir = cfg.raw_dir / "search"
@@ -539,7 +584,9 @@ def _load_all_messages(cfg: CrawlerConfig) -> tuple[list[dict], dict[str, int]]:
             with open(search_path, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
-                        _add(json.loads(line), "search")
+                        msg = _safe_json_loads(line, search_path)
+                        if msg is not None:
+                            _add(msg, "search")
 
     return all_messages, source_counts
 
@@ -688,7 +735,9 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
             with open(mp, encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
-                        msg = json.loads(line)
+                        msg = _safe_json_loads(line, mp)
+                        if msg is None:
+                            continue
                         dk = f"{msg.get('ts', '')}_{msg.get('channel_id', '')}"
                         if dk not in seen_search:
                             seen_search.add(dk)
