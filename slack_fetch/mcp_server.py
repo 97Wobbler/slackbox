@@ -254,7 +254,7 @@ def crawl_user(user_id: str, days: int = 30, include_threads: bool = False) -> s
     search.messages를 우선 사용하고, 실패 시 conversations.history로 fallback합니다.
 
     Args:
-        user_id: Slack 사용자 ID (예: "U07AF1YDVD1")
+        user_id: Slack 사용자 ID (예: "U0XXX0X0X0X")
         days: 수집할 기간 (일). 기본값 30일. 0이면 전체 기간 수집.
         include_threads: True이면 메시지 수집 후 자동으로 스레드도 수집합니다.
     """
@@ -521,7 +521,7 @@ def crawl_mentions(user_id: str, days: int = 30) -> str:
     본인이 보낸 메시지는 제외됩니다.
 
     Args:
-        user_id: Slack 사용자 ID (예: "U07AF1YDVD1")
+        user_id: Slack 사용자 ID (예: "U0XXX0X0X0X")
         days: 수집할 기간 (일). 기본값 30일. 0이면 전체 기간 수집.
     """
     cfg = _get_cfg()
