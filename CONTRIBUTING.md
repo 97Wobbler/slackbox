@@ -15,37 +15,37 @@ cd slack-fetch-mcp
 bash scripts/setup-dev.sh
 ```
 
+## 브랜치 구조
+
+```
+dev/x.y.z     ← 개발 브랜치 (버전별). 여기서 작업.
+main          ← 배포용. squash하여 정갈한 커밋만.
+```
+
 ## 개발 워크플로우
 
 ```bash
-# 1. 브랜치 생성
-git checkout -b feature/xxx
+# 1. 개발 브랜치에서 작업
+git checkout dev/0.1.0
+# ... 작업 + 커밋
+git push origin dev/0.1.0     # private에 push
 
-# 2. 작업 + 커밋 (자유롭게)
-git commit -m "wip: ..."
-git push origin feature/xxx     # private에 push (다른 PC 동기화용)
-
-# 3. 완성되면 main에 merge
-git checkout main
-git merge feature/xxx
-git push origin main            # private에 push
-
-# 4. feature 브랜치 정리
-git branch -d feature/xxx
-git push origin --delete feature/xxx
+# 2. 새 기능이 커지면 하위 브랜치 생성
+git checkout -b dev/0.1.0/search-tool
+# ... 작업 후 dev/0.1.0에 merge
+git checkout dev/0.1.0
+git merge dev/0.1.0/search-tool
+git branch -d dev/0.1.0/search-tool
 ```
 
 ## 배포 (public에 릴리스)
 
 ```bash
-# main에서 squash하여 정갈한 커밋으로 배포
 git checkout main
 
-# 방법 A: 최근 N개 커밋을 squash
-git reset --soft HEAD~N
-git commit -m "feat: v0.2.0 — 주요 변경 설명"
-
-# 방법 B: 또는 그냥 현재 main을 push (커밋이 이미 정리된 경우)
+# dev 브랜치의 변경사항을 squash merge
+git merge --squash dev/0.1.0
+git commit -m "feat: v0.1.0 — 초기 릴리스"
 
 git push public main
 ```
@@ -53,7 +53,6 @@ git push public main
 **주의:**
 - public에는 **main만** push 가능 (pre-push hook이 차단)
 - public push 전에 커밋 히스토리를 정리하세요
-- 실수로 public에 push한 경우: `git push public --delete <branch>`
 
 ## pre-push hook
 
@@ -63,10 +62,12 @@ public remote에 main 외 브랜치 push를 차단합니다.
 ## 커밋 메시지 규칙
 
 ```
-feat: 새 기능
-fix: 버그 수정
-refactor: 리팩터링
+feat: 새 기능                    feat(Q1): list_users tool 추가
+fix: 버그 수정                   fix(D1): 스레드 공유 캐시
+refactor: 리팩터링               refactor(R1a): formatting.py 분리
 docs: 문서
 chore: 유지보수
 simplify: 간소화
 ```
+
+scope `(이슈ID)`는 선택사항. 복수 이슈는 콤마 구분: `feat(Q1,Q2,Q3)`.
