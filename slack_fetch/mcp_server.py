@@ -193,15 +193,74 @@ def list_channels() -> str:
 
 
 @mcp.tool()
-def crawl_channel(channel: str, days: int = 7) -> str:
+def list_users() -> str:
+    """워크스페이스의 사용자 목록을 반환합니다.
+
+    사용자 이름, 표시 이름, ID를 확인할 수 있습니다.
+    crawl_user나 crawl_mentions에 필요한 user_id를 찾는 데 사용하세요.
+    """
+    client = _get_client()
+
+    members: list[dict] = []
+    cursor = None
+
+    try:
+        while True:
+            kwargs: dict = {"limit": 200}
+            if cursor:
+                kwargs["cursor"] = cursor
+
+            resp = client.users_list(**kwargs)
+            rate_wait()
+
+            for m in resp.get("members", []):
+                if m.get("is_bot") or m.get("id") == "USLACKBOT":
+                    continue
+                if m.get("deleted"):
+                    continue
+                members.append(m)
+
+            cursor = resp.get("response_metadata", {}).get("next_cursor")
+            if not cursor:
+                break
+    except SlackApiError as e:
+        error_code = e.response.get("error", "unknown_error")
+        if error_code in ("token_revoked", "invalid_auth", "not_authed", "account_inactive"):
+            return f"Slack 인증 오류 ({error_code}): 토큰이 만료되었거나 무효합니다. 재발급이 필요합니다."
+        if error_code == "missing_scope":
+            return f"Slack 권한 오류 ({error_code}): 토큰에 필요한 scope가 없습니다. users:read 권한을 확인하세요."
+        return f"Slack API 오류 ({error_code}): {e}"
+
+    if not members:
+        return "사용자가 없습니다."
+
+    lines = [f"총 {len(members)}명의 사용자:\n"]
+    for m in sorted(members, key=lambda u: u.get("real_name", "").lower()):
+        profile = m.get("profile", {})
+        display_name = profile.get("display_name") or profile.get("display_name_normalized") or ""
+        real_name = m.get("real_name", "")
+        uid = m["id"]
+
+        if display_name:
+            lines.append(f"- @{display_name} ({real_name}) — ID: {uid}")
+        else:
+            lines.append(f"- @{real_name} ({real_name}) — ID: {uid}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def crawl_channel(channel: str, days: int = 7, until: str = "") -> str:
     """특정 채널의 최근 N일간 전체 대화를 수집합니다.
 
     Args:
         channel: 채널 이름 (예: "general") 또는 채널 ID (예: "C01234")
         days: 수집할 기간 (일). 기본값 7일. 0이면 전체 기간 수집.
+        until: 수집 종료일 (YYYY-MM-DD). 비어있으면 오늘까지.
 
     수집된 데이터는 로컬 data/ 디렉토리에 저장됩니다.
     """
+    channel = channel.lstrip("#")
     cfg = _get_cfg()
     client = _get_client()
 
@@ -220,11 +279,12 @@ def crawl_channel(channel: str, days: int = 7) -> str:
         return f"채널 '{channel}'을 찾을 수 없습니다. list_channels로 확인하세요."
 
     since = _since_str(days) if days > 0 else None
+    until_val = until if until else None
 
     # user_id=None → 채널 전체 대화 수집 (사용자 필터 없음)
     try:
         total = collect_via_history(
-            client, cfg, [target_ch], since=since, user_id=None
+            client, cfg, [target_ch], since=since, until=until_val, user_id=None
         )
     except SlackApiError as e:
         error_code = e.response.get("error", "unknown_error")
@@ -248,7 +308,7 @@ def crawl_channel(channel: str, days: int = 7) -> str:
 
 
 @mcp.tool()
-def crawl_user(user_id: str, days: int = 30, include_threads: bool = False) -> str:
+def crawl_user(user_id: str, days: int = 30, include_threads: bool = False, until: str = "") -> str:
     """특정 사용자의 최근 N일간 활동을 수집합니다.
 
     search.messages를 우선 사용하고, 실패 시 conversations.history로 fallback합니다.
@@ -257,14 +317,16 @@ def crawl_user(user_id: str, days: int = 30, include_threads: bool = False) -> s
         user_id: Slack 사용자 ID (예: "U0XXX0X0X0X")
         days: 수집할 기간 (일). 기본값 30일. 0이면 전체 기간 수집.
         include_threads: True이면 메시지 수집 후 자동으로 스레드도 수집합니다.
+        until: 수집 종료일 (YYYY-MM-DD). 비어있으면 오늘까지.
     """
     cfg = _get_cfg()
     client = _get_client()
 
     since = _since_str(days) if days > 0 else None
+    until_val = until if until else None
 
     try:
-        total = collect_via_search(client, cfg, since=since, user_id=user_id)
+        total = collect_via_search(client, cfg, since=since, until=until_val, user_id=user_id)
         method = "search.messages"
     except SlackApiError as e:
         error_code = e.response.get("error", "unknown_error")
@@ -277,7 +339,7 @@ def crawl_user(user_id: str, days: int = 30, include_threads: bool = False) -> s
             channels = _load_channels(cfg)
             if not channels:
                 channels = collect_channels(client, cfg)
-            total = collect_via_history(client, cfg, channels, since=since, user_id=user_id)
+            total = collect_via_history(client, cfg, channels, since=since, until=until_val, user_id=user_id)
             method = "conversations.history"
         except SlackApiError as e2:
             error_code2 = e2.response.get("error", "unknown_error")
@@ -310,7 +372,7 @@ def crawl_user(user_id: str, days: int = 30, include_threads: bool = False) -> s
 
 
 @mcp.tool()
-def search_messages(query: str, days: int = 30) -> str:
+def search_messages(query: str, days: int = 30, until: str = "") -> str:
     """키워드로 Slack 메시지를 검색하여 수집합니다.
 
     Slack search.messages API를 사용하여 임의 검색어로 메시지를 찾습니다.
@@ -318,6 +380,7 @@ def search_messages(query: str, days: int = 30) -> str:
     Args:
         query: 검색 쿼리. Slack 검색 문법 지원 (예: "배포 in:#general", "from:@홍길동 버그")
         days: 검색 기간 (일). 기본값 30일. 0이면 전체 기간.
+        until: 수집 종료일 (YYYY-MM-DD). 비어있으면 오늘까지.
     """
     cfg = _get_cfg()
     client = _get_client()
@@ -331,6 +394,8 @@ def search_messages(query: str, days: int = 30) -> str:
     since = _since_str(days)
     if since:
         full_query += f" after:{since}"
+    if until:
+        full_query += f" before:{until}"
 
     # 파일명용 쿼리 sanitize
     sanitized = re.sub(r'[^\w가-힣\s-]', '_', query).strip()
@@ -433,6 +498,7 @@ def crawl_threads(
         user_id: Slack 사용자 ID. 지정하면 해당 사용자의 messages.jsonl에서 thread_ts를
                  자동 추출하고 모든 채널의 스레드를 수집합니다.
     """
+    channel = channel.lstrip("#")
     cfg = _get_cfg()
     client = _get_client()
 
@@ -514,7 +580,7 @@ def crawl_threads(
 
 
 @mcp.tool()
-def crawl_mentions(user_id: str, days: int = 30) -> str:
+def crawl_mentions(user_id: str, days: int = 30, until: str = "") -> str:
     """특정 사용자가 멘션된 메시지를 수집합니다.
 
     다른 사람이 해당 사용자를 @멘션한 메시지를 검색하여 수집합니다.
@@ -523,14 +589,16 @@ def crawl_mentions(user_id: str, days: int = 30) -> str:
     Args:
         user_id: Slack 사용자 ID (예: "U0XXX0X0X0X")
         days: 수집할 기간 (일). 기본값 30일. 0이면 전체 기간 수집.
+        until: 수집 종료일 (YYYY-MM-DD). 비어있으면 오늘까지.
     """
     cfg = _get_cfg()
     client = _get_client()
 
     since = _since_str(days) if days > 0 else None
+    until_val = until if until else None
 
     try:
-        total = collect_mentions(client, cfg, since=since, user_id=user_id)
+        total = collect_mentions(client, cfg, since=since, until=until_val, user_id=user_id)
     except SlackApiError as e:
         error_code = e.response.get("error", "unknown_error")
         if error_code in ("token_revoked", "invalid_auth", "not_authed", "account_inactive"):
