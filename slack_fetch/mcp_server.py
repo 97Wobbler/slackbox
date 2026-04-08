@@ -69,8 +69,10 @@ def _load_channels(cfg: CrawlerConfig) -> list[dict]:
     return data.get("channels", [])
 
 
-def _since_str(days: int) -> str:
-    """N일 전 날짜를 YYYY-MM-DD 문자열로 반환."""
+def _since_str(days: int) -> str | None:
+    """N일 전 날짜를 YYYY-MM-DD 문자열로 반환. days가 0 이하이면 None (기간 제한 없음)."""
+    if days <= 0:
+        return None
     dt = datetime.now(timezone.utc) - timedelta(days=days)
     return dt.strftime("%Y-%m-%d")
 
@@ -191,7 +193,7 @@ def crawl_channel(channel: str, days: int = 7) -> str:
 
     Args:
         channel: 채널 이름 (예: "general") 또는 채널 ID (예: "C01234")
-        days: 수집할 기간 (일). 기본값 7일.
+        days: 수집할 기간 (일). 기본값 7일. 0이면 전체 기간 수집.
 
     수집된 데이터는 로컬 data/ 디렉토리에 저장됩니다.
     """
@@ -212,7 +214,7 @@ def crawl_channel(channel: str, days: int = 7) -> str:
     if not target_ch:
         return f"채널 '{channel}'을 찾을 수 없습니다. list_channels로 확인하세요."
 
-    since = _since_str(days)
+    since = _since_str(days) if days > 0 else None
     total = 0
 
     for uid in cfg.target_user_ids:
@@ -221,8 +223,9 @@ def crawl_channel(channel: str, days: int = 7) -> str:
         )
         total += count
 
+    period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
     return (
-        f"#{target_ch['name']} 채널 최근 {days}일 대화 수집 완료.\n"
+        f"#{target_ch['name']} 채널 {period_desc} 대화 수집 완료.\n"
         f"수집된 메시지: {total}건 (대상 사용자 {len(cfg.target_user_ids)}명)\n"
         f"get_collected_data로 수집 데이터를 조회할 수 있습니다."
     )
@@ -236,12 +239,12 @@ def crawl_user(user_id: str, days: int = 30) -> str:
 
     Args:
         user_id: Slack 사용자 ID (예: "U07AF1YDVD1")
-        days: 수집할 기간 (일). 기본값 30일.
+        days: 수집할 기간 (일). 기본값 30일. 0이면 전체 기간 수집.
     """
     cfg = _get_cfg()
     client = _get_client()
 
-    since = _since_str(days)
+    since = _since_str(days) if days > 0 else None
 
     try:
         total = collect_via_search(client, cfg, since=since, user_id=user_id)
@@ -254,8 +257,9 @@ def crawl_user(user_id: str, days: int = 30) -> str:
         total = collect_via_history(client, cfg, channels, since=since, user_id=user_id)
         method = "conversations.history"
 
+    period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
     return (
-        f"사용자 {user_id}의 최근 {days}일 활동 수집 완료.\n"
+        f"사용자 {user_id}의 {period_desc} 활동 수집 완료.\n"
         f"수집 방법: {method}\n"
         f"수집된 메시지: {total}건\n"
         f"스레드 수집이 필요하면 crawl_threads를 실행하세요."
