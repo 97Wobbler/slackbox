@@ -24,6 +24,7 @@ from slack_fetch.client import create_slack_client
 from slack_fetch.channels import collect_channels
 from slack_fetch.messages import collect_via_search, collect_via_history
 from slack_fetch.threads import collect_threads
+from slack_fetch.mentions import collect_mentions
 from slack_fetch.rate_limit import rate_wait, handle_rate_limit
 from slack_fetch.text_cleaner import (
     SlackTextCleaner,
@@ -235,7 +236,7 @@ def crawl_channel(channel: str, days: int = 7) -> str:
 
 
 @mcp.tool()
-def crawl_user(user_id: str, days: int = 30) -> str:
+def crawl_user(user_id: str, days: int = 30, include_threads: bool = False) -> str:
     """특정 사용자의 최근 N일간 활동을 수집합니다.
 
     search.messages를 우선 사용하고, 실패 시 conversations.history로 fallback합니다.
@@ -243,6 +244,7 @@ def crawl_user(user_id: str, days: int = 30) -> str:
     Args:
         user_id: Slack 사용자 ID (예: "U07AF1YDVD1")
         days: 수집할 기간 (일). 기본값 30일. 0이면 전체 기간 수집.
+        include_threads: True이면 메시지 수집 후 자동으로 스레드도 수집합니다.
     """
     cfg = _get_cfg()
     client = _get_client()
@@ -261,11 +263,18 @@ def crawl_user(user_id: str, days: int = 30) -> str:
         method = "conversations.history"
 
     period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
+
+    thread_info = ""
+    if include_threads:
+        thread_count = collect_threads(client, cfg, user_id=user_id)
+        thread_info = f"\n스레드 수집: {thread_count}개 완료"
+
     return (
         f"사용자 {user_id}의 {period_desc} 활동 수집 완료.\n"
         f"수집 방법: {method}\n"
-        f"수집된 메시지: {total}건\n"
-        f"스레드 수집이 필요하면 crawl_threads를 실행하세요."
+        f"수집된 메시지: {total}건"
+        f"{thread_info}"
+        + ("" if include_threads else "\n스레드 수집이 필요하면 crawl_threads를 실행하세요.")
     )
 
 
@@ -366,15 +375,44 @@ def search_messages(query: str, days: int = 30) -> str:
 
 
 @mcp.tool()
-def crawl_threads(channel: str, thread_ts_list: list[str]) -> str:
+def crawl_threads(
+    channel: str = "",
+    thread_ts_list: list[str] | None = None,
+    user_id: str = "",
+) -> str:
     """지정된 스레드들의 전체 대화를 수집합니다.
 
+    user_id를 지정하면 해당 사용자의 messages.jsonl에서 thread_ts를 자동 추출하여
+    모든 채널의 스레드를 한 번에 수집합니다 (channel 파라미터 무시).
+
     Args:
-        channel: 채널 이름 또는 채널 ID
-        thread_ts_list: 수집할 스레드의 타임스탬프 목록 (예: ["1717000000.000000"])
+        channel: 채널 이름 또는 채널 ID (user_id 미지정 시 필수)
+        thread_ts_list: 수집할 스레드의 타임스탬프 목록 (예: ["1717000000.000000"]).
+                        비어있거나 미지정 시 user_id의 messages.jsonl에서 자동 추출.
+        user_id: Slack 사용자 ID. 지정하면 해당 사용자의 messages.jsonl에서 thread_ts를
+                 자동 추출하고 모든 채널의 스레드를 수집합니다.
     """
     cfg = _get_cfg()
     client = _get_client()
+
+    # ── 자동 발견 모드: user_id가 주어지면 collect_threads 호출 ──
+    if user_id:
+        thread_count = collect_threads(client, cfg, user_id=user_id)
+        return (
+            f"사용자 {user_id}의 스레드 자동 수집 완료.\n"
+            f"수집된 스레드: {thread_count}개\n"
+            f"messages.jsonl에서 thread_ts를 자동 추출하여 모든 채널 대상으로 수집했습니다."
+        )
+
+    # ── 수동 모드: channel + thread_ts_list 지정 ──
+    if not channel:
+        return "channel 또는 user_id 중 하나는 반드시 지정해야 합니다."
+
+    if not thread_ts_list:
+        return (
+            "thread_ts_list가 비어있습니다. "
+            "수집할 스레드 타임스탬프를 지정하거나 user_id를 지정하여 자동 발견 모드를 사용하세요."
+        )
 
     # 채널 ID 확인
     channels = _load_channels(cfg)
@@ -430,6 +468,83 @@ def crawl_threads(channel: str, thread_ts_list: list[str]) -> str:
 
 
 @mcp.tool()
+def crawl_mentions(user_id: str, days: int = 30) -> str:
+    """특정 사용자가 멘션된 메시지를 수집합니다.
+
+    다른 사람이 해당 사용자를 @멘션한 메시지를 검색하여 수집합니다.
+    본인이 보낸 메시지는 제외됩니다.
+
+    Args:
+        user_id: Slack 사용자 ID (예: "U07AF1YDVD1")
+        days: 수집할 기간 (일). 기본값 30일. 0이면 전체 기간 수집.
+    """
+    cfg = _get_cfg()
+    client = _get_client()
+
+    since = _since_str(days) if days > 0 else None
+
+    total = collect_mentions(client, cfg, since=since, user_id=user_id)
+
+    period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
+    return (
+        f"사용자 {user_id}의 {period_desc} 멘션 수집 완료.\n"
+        f"수집된 멘션: {total}건\n"
+        f"저장 위치: {cfg.user_raw_dir(user_id) / 'mentions.jsonl'}"
+    )
+
+
+def _load_all_messages(cfg: CrawlerConfig) -> tuple[list[dict], dict[str, int]]:
+    """3가지 소스에서 메시지를 로드하고 ts+channel_id 기반 dedup.
+
+    Returns:
+        (deduplicated messages list, source counts dict)
+    """
+    seen: set[str] = set()  # "ts_channel_id"
+    all_messages: list[dict] = []
+    source_counts = {"user": 0, "channel": 0, "search": 0}
+
+    def _add(msg: dict, source: str) -> None:
+        ts = msg.get("ts", "")
+        ch_id = msg.get("channel_id", "")
+        dedup_key = f"{ts}_{ch_id}"
+        if dedup_key in seen:
+            return
+        seen.add(dedup_key)
+        all_messages.append(msg)
+        source_counts[source] += 1
+
+    # 1) 사용자별 messages.jsonl
+    for uid in cfg.target_user_ids:
+        mp = cfg.user_messages_path(uid)
+        if not mp.exists():
+            continue
+        with open(mp, encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    _add(json.loads(line), "user")
+
+    # 2) 채널 전체 대화: data/raw/channels/*/messages.jsonl
+    channels_dir = cfg.raw_dir / "channels"
+    if channels_dir.exists():
+        for ch_msg_path in sorted(channels_dir.glob("*/messages.jsonl")):
+            with open(ch_msg_path, encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        _add(json.loads(line), "channel")
+
+    # 3) 키워드 검색 결과: data/raw/search/*.jsonl
+    search_dir = cfg.raw_dir / "search"
+    if search_dir.exists():
+        for search_path in sorted(search_dir.glob("*.jsonl")):
+            with open(search_path, encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        _add(json.loads(line), "search")
+
+    return all_messages, source_counts
+
+
+@mcp.tool()
 def get_collected_data(scope: str, format: str = "markdown") -> str:
     """수집된 데이터를 정제된 형태로 반환합니다.
 
@@ -439,21 +554,14 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
             - "channel:<이름>": 특정 채널 데이터 (예: "channel:general")
             - "week:<주>": 특정 주 데이터 (예: "week:2025-W22")
             - "recent:<N>": 최근 N일 데이터 (예: "recent:7")
+            - "search:<query>": 특정 키워드 검색 결과 (예: "search:배포")
             - "summary": 수집 현황 요약
         format: 출력 형식. "markdown" (기본값) 또는 "json".
     """
     cfg = _get_cfg()
 
-    # 모든 user의 메시지 로드
-    all_messages: list[dict] = []
-    for uid in cfg.target_user_ids:
-        mp = cfg.user_messages_path(uid)
-        if not mp.exists():
-            continue
-        with open(mp, encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    all_messages.append(json.loads(line))
+    # 3가지 소스에서 메시지 로드 (dedup 포함)
+    all_messages, source_counts = _load_all_messages(cfg)
 
     if not all_messages and scope != "summary":
         return "수집된 데이터가 없습니다. crawl_user 또는 crawl_channel을 먼저 실행하세요."
@@ -471,29 +579,52 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
         if td.exists():
             thread_count = len(list(td.glob("*.jsonl")))
 
+        # 채널 수집 현황
+        channels_dir = cfg.raw_dir / "channels"
+        crawled_channels = 0
+        if channels_dir.exists():
+            crawled_channels = len(list(channels_dir.glob("*/messages.jsonl")))
+
+        # 검색 수집 현황
+        search_dir = cfg.raw_dir / "search"
+        search_files: list[str] = []
+        if search_dir.exists():
+            search_files = [p.stem for p in sorted(search_dir.glob("*.jsonl"))]
+
         if not all_messages:
-            return (
+            summary = (
                 f"수집 현황:\n"
                 f"- 채널: {len(channels)}개\n"
                 f"- 메시지: 0건\n"
                 f"- 스레드: {thread_count}개\n"
-                f"- 대상 사용자: {', '.join(cfg.target_user_ids)}"
+                f"- 대상 사용자: {', '.join(cfg.target_user_ids)}\n"
+                f"- 채널 전체 크롤: {crawled_channels}개"
             )
+            if search_files:
+                summary += f"\n- 검색 데이터: {', '.join(search_files)}"
+            return summary
 
         all_messages.sort(key=lambda m: float(m.get("ts", "0")))
         ch_names = set(m.get("channel_name", "?") for m in all_messages)
         first = ts_to_str(all_messages[0]["ts"], tz)
         last = ts_to_str(all_messages[-1]["ts"], tz)
 
-        return (
+        summary = (
             f"수집 현황:\n"
             f"- 채널: {len(channels)}개 (활동: {len(ch_names)}개)\n"
-            f"- 메시지: {len(all_messages)}건\n"
+            f"- 메시지: {len(all_messages)}건 "
+            f"(사용자별: {source_counts['user']}, "
+            f"채널별: {source_counts['channel']}, "
+            f"검색: {source_counts['search']})\n"
             f"- 스레드: {thread_count}개\n"
             f"- 기간: {first} ~ {last}\n"
             f"- 대상 사용자: {', '.join(cfg.target_user_ids)}\n"
+            f"- 채널 전체 크롤: {crawled_channels}개\n"
             f"- 활동 채널: {', '.join(sorted(ch_names))}"
         )
+        if search_files:
+            summary += f"\n- 검색 데이터: {', '.join(search_files)}"
+        return summary
 
     # ── filter messages ──
     messages = all_messages
@@ -525,6 +656,46 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
         if not messages:
             return f"최근 {recent_days}일 내 수집된 메시지가 없습니다."
 
+    elif scope.startswith("search:"):
+        query_keyword = scope.split(":", 1)[1]
+        # 쿼리명과 매칭되는 검색 결과 파일에서만 로드
+        search_dir = cfg.raw_dir / "search"
+        if not search_dir.exists():
+            return "검색 데이터가 없습니다. search_messages를 먼저 실행하세요."
+        sanitized = re.sub(r'[^\w가-힣\s-]', '_', query_keyword).strip()
+        sanitized = re.sub(r'\s+', '_', sanitized)
+        target_path = search_dir / f"{sanitized}.jsonl"
+        if target_path.exists():
+            matched_paths = [target_path]
+        else:
+            # 정확한 파일이 없으면, 파일명에 키워드가 포함된 파일들에서 로드
+            matched_paths = [
+                p for p in search_dir.glob("*.jsonl")
+                if query_keyword.lower() in p.stem.lower()
+            ]
+            if not matched_paths:
+                available = [p.stem for p in search_dir.glob("*.jsonl")]
+                return (
+                    f"검색어 '{query_keyword}'에 해당하는 데이터가 없습니다.\n"
+                    f"사용 가능한 검색 데이터: "
+                    f"{', '.join(available) if available else '없음'}"
+                )
+
+        # 매칭 파일들에서 메시지 로드 (dedup)
+        seen_search: set[str] = set()
+        messages = []
+        for mp in matched_paths:
+            with open(mp, encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        msg = json.loads(line)
+                        dk = f"{msg.get('ts', '')}_{msg.get('channel_id', '')}"
+                        if dk not in seen_search:
+                            seen_search.add(dk)
+                            messages.append(msg)
+        if not messages:
+            return f"검색어 '{query_keyword}' 결과가 비어 있습니다."
+
     elif scope != "all":
         return (
             "scope 형식 오류. 사용 가능한 값:\n"
@@ -532,6 +703,7 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
             "- channel:<이름>: 특정 채널\n"
             "- week:<주>: 특정 주 (예: 2025-W22)\n"
             "- recent:<N>: 최근 N일\n"
+            "- search:<검색어>: 특정 키워드 검색 결과\n"
             "- summary: 수집 현황"
         )
 
