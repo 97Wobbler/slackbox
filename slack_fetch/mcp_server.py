@@ -576,17 +576,21 @@ def _load_all_messages(cfg: CrawlerConfig) -> tuple[list[dict], dict[str, int]]:
         all_messages.append(msg)
         source_counts[source] += 1
 
-    # 1) 사용자별 messages.jsonl
-    for uid in cfg.target_user_ids:
-        mp = cfg.user_messages_path(uid)
-        if not mp.exists():
-            continue
-        with open(mp, encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    msg = _safe_json_loads(line, mp)
-                    if msg is not None:
-                        _add(msg, "user")
+    # 1) 사용자별 messages.jsonl — 디렉토리 자동 탐색
+    #    U로 시작하는 디렉토리를 모두 스캔 (cfg.target_user_ids에 의존하지 않음)
+    if cfg.raw_dir.exists():
+        for user_dir in sorted(cfg.raw_dir.iterdir()):
+            if not user_dir.is_dir() or not user_dir.name.startswith("U"):
+                continue
+            mp = user_dir / "messages.jsonl"
+            if not mp.exists():
+                continue
+            with open(mp, encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        msg = _safe_json_loads(line, mp)
+                        if msg is not None:
+                            _add(msg, "user")
 
     # 2) 채널 전체 대화: data/raw/channels/*/messages.jsonl
     channels_dir = cfg.raw_dir / "channels"
@@ -666,7 +670,7 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
                 f"- 채널: {len(channels)}개\n"
                 f"- 메시지: 0건\n"
                 f"- 스레드: {thread_count}개\n"
-                f"- 대상 사용자: {', '.join(cfg.target_user_ids)}\n"
+                f"- 수집된 사용자: {', '.join(d.name for d in sorted(cfg.raw_dir.iterdir()) if d.is_dir() and d.name.startswith('U')) or ['없음']}\n"
                 f"- 채널 전체 크롤: {crawled_channels}개"
             )
             if search_files:
@@ -687,7 +691,7 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
             f"검색: {source_counts['search']})\n"
             f"- 스레드: {thread_count}개\n"
             f"- 기간: {first} ~ {last}\n"
-            f"- 대상 사용자: {', '.join(cfg.target_user_ids)}\n"
+            f"- 수집된 사용자: {', '.join(d.name for d in sorted(cfg.raw_dir.iterdir()) if d.is_dir() and d.name.startswith('U')) or ['없음']}\n"
             f"- 채널 전체 크롤: {crawled_channels}개\n"
             f"- 활동 채널: {', '.join(sorted(ch_names))}"
         )

@@ -39,9 +39,6 @@ class CrawlerConfig:
     def user_raw_dir(self, user_id: str) -> Path:
         return self.raw_dir / user_id
 
-    def user_threads_dir(self, user_id: str) -> Path:
-        return self.raw_dir / user_id / "threads"
-
     def user_messages_path(self, user_id: str) -> Path:
         return self.raw_dir / user_id / "messages.jsonl"
 
