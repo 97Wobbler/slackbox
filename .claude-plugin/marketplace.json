@@ -1,0 +1,18 @@
+{
+  "name": "slackbox",
+  "owner": {
+    "name": "97Wobbler"
+  },
+  "metadata": {
+    "description": "Slack 벌크 수집 MCP 서버 + 라우팅 스킬",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "slackbox",
+      "source": "./",
+      "description": "Slack 워크스페이스 대화를 벌크로 가져오는 MCP 서버. 채널/사용자 대화 수집, 키워드 검색, 멘션/스레드 수집, Markdown 정제.",
+      "version": "0.1.0"
+    }
+  ]
+}
