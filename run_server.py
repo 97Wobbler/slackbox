@@ -5,7 +5,7 @@ import sys
 
 def ensure_dependencies():
     """필수 Python 패키지가 없으면 자동 설치."""
-    required = ["slack_sdk", "mcp", "dotenv", "certifi"]
+    required = ["slack_sdk", "mcp", "dotenv", "certifi", "tzdata"]
     missing = []
     for pkg in required:
         try:
@@ -20,6 +20,7 @@ def ensure_dependencies():
             "mcp": "mcp",
             "dotenv": "python-dotenv",
             "certifi": "certifi",
+            "tzdata": "tzdata",
         }
         to_install = [pip_names.get(m, m) for m in missing]
         subprocess.check_call(
