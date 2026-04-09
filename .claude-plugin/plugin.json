@@ -11,11 +11,11 @@
   "mcpServers": {
     "slackbox": {
       "command": "python3",
-      "args": ["-m", "slack_fetch.mcp_server"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/run_server.py"],
       "env": {
         "SLACK_USER_TOKEN": "${user_config.slack_token}",
         "SLACK_FETCH_DATA_DIR": "${CLAUDE_PLUGIN_DATA}/data",
-        "PYTHONPATH": "${CLAUDE_PLUGIN_DATA}/lib"
+        "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}"
       }
     }
   },
