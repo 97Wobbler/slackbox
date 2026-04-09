@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# pre-push hook: live remote에는 main 브랜치만 push 허용
+
+remote="$1"
+
+if [[ "$remote" != "live" ]]; then
+    exit 0
+fi
+
+while read local_ref local_sha remote_ref remote_sha; do
+    branch=$(echo "$remote_ref" | sed 's|refs/heads/||')
+    if [[ "$branch" != "main" ]]; then
+        echo "ERROR: live remote에는 main 브랜치만 push할 수 있습니다."
+        echo "  차단된 브랜치: $branch"
+        echo "  개발 브랜치는 dev remote에 push하세요."
+        exit 1
+    fi
+done
+
+exit 0

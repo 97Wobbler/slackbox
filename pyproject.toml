@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slackbox"
+version = "0.1.0"
+description = "Slack bulk fetching MCP server for Claude Code — collect channel/user messages with checkpoint/resume and rate-limit handling"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+readme = "README.md"
+keywords = ["slack", "mcp", "claude-code", "bulk-fetch", "message-collection"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+]
+dependencies = [
+    "slack-sdk>=3.27.0",
+    "click>=8.1.0",
+    "python-dotenv>=1.0.0",
+    "certifi",
+    "mcp>=1.0.0",
+    "tzdata>=2024.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/97Wobbler/slackbox"
+Repository = "https://github.com/97Wobbler/slackbox"
+Issues = "https://github.com/97Wobbler/slackbox/issues"
+
+[project.scripts]
+slack-fetch = "slack_fetch.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["slack_fetch*"]

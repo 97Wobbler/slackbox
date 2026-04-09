@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# slack-fetch — Claude Code 플러그인용 엔트리포인트
+# 의존성 자동 설치 후 실행
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# 의존성 설치 (최초 1회)
+MARKER="$PLUGIN_ROOT/.deps_installed"
+if [ ! -f "$MARKER" ]; then
+    pip install --quiet "$PLUGIN_ROOT" 2>/dev/null
+    touch "$MARKER"
+fi
+
+# CLI 실행 (인자가 없으면 serve)
+if [ $# -eq 0 ]; then
+    exec python3 -m slack_fetch serve
+else
+    exec python3 -m slack_fetch "$@"
+fi
