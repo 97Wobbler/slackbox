@@ -18,7 +18,8 @@ slack_fetch/
 ├── rate_limit.py      # Tier 감지 + 429 대기
 ├── text_cleaner.py    # Slack mrkdwn → plaintext
 ├── data_loader.py     # 수집 데이터 로드 (_load_channels, _load_all_messages)
-├── formatting.py      # Markdown 포매팅 (채널별/주별)
+├── formatting.py      # Markdown 포매팅 (채널별/주별/채널×주)
+├── md_cache.py        # Markdown 캐시 생성/무효화 (채널×주 단위)
 ├── utils.py           # 공통 유틸리티 (checkpoint, JSONL, safe_json_loads)
 └── cli.py             # init/serve/status
 ```
@@ -32,6 +33,11 @@ data/raw/
 ├── channels/{channel_id}/     # 채널 전체 대화 (crawl_channel)
 ├── search/{query}.jsonl       # 키워드 검색 결과 (search_messages)
 └── {user_id}/                 # 사용자별 메시지 (crawl_user)
+
+data/cleaned/
+└── {channel_id}_{channel_name}/
+    ├── YYYY-WNN.md            # 채널×주 단위 Markdown (AUTO-GENERATED)
+    └── ...
 ```
 
 ## 운영 방식
