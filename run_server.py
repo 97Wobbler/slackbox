@@ -13,6 +13,14 @@ def ensure_dependencies():
         except ImportError:
             missing.append(pkg)
 
+    # Windows: tzdata가 import는 되지만 IANA DB가 없는 경우 체크
+    if "tzdata" not in missing:
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo("Asia/Seoul")
+        except (KeyError, Exception):
+            missing.append("tzdata")
+
     if missing:
         # pip 패키지 이름 매핑 (import 이름 != pip 이름)
         pip_names = {
@@ -24,7 +32,8 @@ def ensure_dependencies():
         }
         to_install = [pip_names.get(m, m) for m in missing]
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet"] + to_install,
+            [sys.executable, "-m", "pip", "install", "--quiet", "--force-reinstall"]
+            + to_install,
         )
 
 

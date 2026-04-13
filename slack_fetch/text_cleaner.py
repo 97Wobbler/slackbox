@@ -4,9 +4,24 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+# Windows에서 tzdata 없이 ZoneInfo 실패하는 경우 자동 설치
+try:
+    ZoneInfo("Asia/Seoul")
+except KeyError:
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "--quiet", "--force-reinstall", "tzdata"],
+    )
+    # 재로드: importlib로 zoneinfo 캐시 초기화
+    import importlib
+    import zoneinfo
+    importlib.reload(zoneinfo)
+    from zoneinfo import ZoneInfo  # noqa: F811
 
 from slack_fetch.config import CrawlerConfig
 

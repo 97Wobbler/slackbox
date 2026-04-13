@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slackbox"
-version = "0.1.0"
+version = "0.1.1"
 description = "Slack bulk fetching MCP server for Claude Code — collect channel/user messages with checkpoint/resume and rate-limit handling"
 license = {text = "MIT"}
 requires-python = ">=3.11"

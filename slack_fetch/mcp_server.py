@@ -35,6 +35,7 @@ from slack_fetch.text_cleaner import (
 )
 from slack_fetch.utils import safe_json_loads
 from slack_fetch.data_loader import _load_channels, _load_all_messages
+from slack_fetch.md_cache import build_md_cache, list_cached_md
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -66,6 +67,20 @@ def _get_client():
 
 
 # ── 헬퍼 ─────────────────────────────────────────────────────────
+
+def _refresh_md_cache(cfg: CrawlerConfig) -> None:
+    """수집 완료 후 Markdown 캐시를 갱신한다. 실패해도 수집을 중단하지 않는다."""
+    try:
+        from slack_fetch.md_cache import build_md_cache
+        from slack_fetch.text_cleaner import SlackTextCleaner, load_user_map_from_threads, load_channel_map
+        user_map = load_user_map_from_threads(cfg)
+        channel_map = load_channel_map(cfg)
+        cleaner = SlackTextCleaner(user_map, channel_map)
+        result = build_md_cache(cfg, cleaner, cfg.timezone)
+        logger.info("MD 캐시 갱신: %s", result)
+    except Exception as e:
+        logger.warning("MD 캐시 갱신 실패 (무시): %s", e)
+
 
 def _since_str(days: int) -> str | None:
     """N일 전 날짜를 YYYY-MM-DD 문자열로 반환. days가 0 이하이면 None (기간 제한 없음)."""
@@ -228,6 +243,7 @@ def crawl_channel(channel: str, days: int = 7, until: str = "") -> str:
         return f"Slack API 오류 ({error_code}): {e}"
 
     period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
+    _refresh_md_cache(cfg)
     return (
         f"#{target_ch['name']} 채널 {period_desc} 전체 대화 수집 완료.\n"
         f"수집된 메시지: {total}건\n"
@@ -291,6 +307,7 @@ def crawl_user(user_id: str, days: int = 30, include_threads: bool = False, unti
             error_code = e.response.get("error", "unknown_error")
             thread_info = f"\n스레드 수집 실패 ({error_code}): {e}"
 
+    _refresh_md_cache(cfg)
     return (
         f"사용자 {user_id}의 {period_desc} 활동 수집 완료.\n"
         f"수집 방법: {method}\n"
@@ -400,6 +417,7 @@ def search_messages(query: str, days: int = 30, until: str = "") -> str:
             rate_wait(1.0)
 
     period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
+    _refresh_md_cache(cfg)
     return (
         f"키워드 검색 수집 완료.\n"
         f"검색어: {query}\n"
@@ -434,6 +452,7 @@ def crawl_threads(
     # ── 자동 발견 모드: user_id가 주어지면 collect_threads 호출 ──
     if user_id:
         thread_count = collect_threads(client, cfg, user_id=user_id)
+        _refresh_md_cache(cfg)
         return (
             f"사용자 {user_id}의 스레드 자동 수집 완료.\n"
             f"수집된 스레드: {thread_count}개\n"
@@ -505,6 +524,7 @@ def crawl_threads(
     result = f"#{channel_name} 스레드 {collected}/{len(thread_ts_list)}개 수집 완료."
     if errors_list:
         result += f"\n오류: {'; '.join(errors_list)}"
+    _refresh_md_cache(cfg)
     return result
 
 
@@ -537,6 +557,7 @@ def crawl_mentions(user_id: str, days: int = 30, until: str = "") -> str:
         return f"Slack API 오류 ({error_code}): {e}"
 
     period_desc = f"최근 {days}일" if days > 0 else "전체 기간"
+    _refresh_md_cache(cfg)
     return (
         f"사용자 {user_id}의 {period_desc} 멘션 수집 완료.\n"
         f"수집된 멘션: {total}건\n"
@@ -714,11 +735,46 @@ def get_collected_data(scope: str, format: str = "markdown") -> str:
     if format == "json":
         return json.dumps(messages, ensure_ascii=False, indent=2)
 
-    # markdown: scope에 따라 그룹핑 방식 결정
+    # markdown: 캐시 기반 파일 목록 반환
+    cache_status = build_md_cache(cfg, cleaner, tz)
+    cached_files = list_cached_md(cfg)
+
+    # scope에 따라 파일 목록 필터링
     if scope.startswith("channel:"):
-        return _format_channel_messages_md(messages, cleaner, tz, cfg)
-    else:
+        ch_name = scope.split(":", 1)[1].lower()
+        cached_files = [f for f in cached_files if ch_name in f["channel"].lower()]
+    elif scope.startswith("week:"):
+        target_week = scope.split(":", 1)[1]
+        cached_files = [f for f in cached_files if f["week"] == target_week]
+    elif scope.startswith("recent:"):
+        # recent:N일에 해당하는 주차들 계산
+        try:
+            recent_days = int(scope.split(":", 1)[1])
+        except ValueError:
+            return "recent:<숫자> 형식으로 입력하세요."
+        from datetime import datetime, timedelta, timezone as tz_mod
+        cutoff = datetime.now(tz_mod.utc) - timedelta(days=recent_days)
+        recent_weeks = set()
+        for d in range(recent_days + 7):  # 주 경계 커버
+            day = cutoff + timedelta(days=d)
+            if day <= datetime.now(tz_mod.utc):
+                iso = day.isocalendar()
+                recent_weeks.add(f"{iso[0]}-W{iso[1]:02d}")
+        cached_files = [f for f in cached_files if f["week"] in recent_weeks]
+    elif scope.startswith("search:"):
+        # 검색 결과는 캐시 미적용 — 기존 방식으로 직접 포매팅
         return _format_weekly_md(messages, cleaner, tz, cfg)
+    # scope == "all"이면 필터 없이 전체
+
+    if not cached_files:
+        return "해당 범위에 캐시된 Markdown 파일이 없습니다."
+
+    result = {
+        "cache_status": cache_status,
+        "files": cached_files,
+        "hint": "파일 내용은 Read tool로 path를 읽으세요.",
+    }
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 # ── 엔트리포인트 ─────────────────────────────────────────────────
