@@ -78,8 +78,7 @@ class CrawlerConfig:
             self.raw_dir,
             self.raw_dir / "channels",
             self.shared_threads_dir,
-            self.cleaned_dir / "by_channel",
-            self.cleaned_dir / "by_period",
+            self.cleaned_dir,
         ]
         for uid in self.target_user_ids:
             dirs.append(self.user_raw_dir(uid))
